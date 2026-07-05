@@ -1,0 +1,43 @@
+[package]
+name = "lanyou-launcher"
+version = "0.1.0"
+description = "LanyouLauncher - A modern Minecraft launcher"
+authors = ["Minecraft小狗轩"]
+license = ""
+repository = "https://github.com/xiaogouxuan/LanyouLauncher"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-process = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-store = "2"
+tauri-plugin-log = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4", "v3"] }
+md5 = "0.7"
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+log = "0.4"
+env_logger = "0.11"
+thiserror = "2"
+chrono = { version = "0.4", features = ["serde"] }
+open = "5"
+url = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+sysinfo = "0.30"

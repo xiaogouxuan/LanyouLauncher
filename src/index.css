@@ -1,0 +1,201 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== Material Design 3 Expressive 主题 CSS 变量 ===== */
+:root {
+  /* 主题种子色：默认蓝色，可被用户自定义覆盖 */
+  --theme-color: #3B82F6;
+  --theme-color-rgb: 59, 130, 246;
+
+  /* MD3 Expressive 颜色 Token（默认浅色） */
+  --md-sys-color-primary: #3B82F6;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #d8e6ff;
+  --md-sys-color-on-primary-container: #001d3d;
+  --md-sys-color-secondary: #5c5f66;
+  --md-sys-color-on-secondary: #ffffff;
+  --md-sys-color-secondary-container: #e1e2e8;
+  --md-sys-color-on-secondary-container: #1a1c22;
+  --md-sys-color-tertiary: #7c5790;
+  --md-sys-color-on-tertiary: #ffffff;
+  --md-sys-color-tertiary-container: #f5d9ff;
+  --md-sys-color-on-tertiary-container: #2e0e41;
+  --md-sys-color-error: #ba1a1a;
+  --md-sys-color-on-error: #ffffff;
+  --md-sys-color-error-container: #ffdad6;
+  --md-sys-color-on-error-container: #410002;
+  --md-sys-color-surface: #faf9fd;
+  --md-sys-color-on-surface: #1b1b1f;
+  --md-sys-color-surface-variant: #e3e1ec;
+  --md-sys-color-on-surface-variant: #46464f;
+  --md-sys-color-surface-container-lowest: #ffffff;
+  --md-sys-color-surface-container-low: #f5f4f9;
+  --md-sys-color-surface-container: #efedf4;
+  --md-sys-color-surface-container-high: #e9e7ee;
+  --md-sys-color-surface-container-highest: #e3e1e8;
+  --md-sys-color-outline: #777680;
+  --md-sys-color-outline-variant: #c7c5d0;
+  --md-sys-color-inverse-surface: #303034;
+  --md-sys-color-inverse-on-surface: #f2f0f5;
+  --md-sys-color-inverse-primary: #a8c7ff;
+  --md-sys-color-scrim: rgba(0, 0, 0, 0.32);
+  --md-sys-color-shadow: rgba(0, 0, 0, 0.2);
+
+  /* 兼容旧变量：映射到 MD3 Token */
+  --color-bg-primary: var(--md-sys-color-surface);
+  --color-bg-secondary: var(--md-sys-color-surface-container);
+  --color-bg-card: var(--md-sys-color-surface-container-high);
+  --color-text-primary: var(--md-sys-color-on-surface);
+  --color-text-secondary: var(--md-sys-color-on-surface-variant);
+  --color-border: var(--md-sys-color-outline-variant);
+  --color-accent: var(--md-sys-color-primary);
+  --color-accent-hover: var(--md-sys-color-primary);
+  --color-glass-bg: color-mix(in srgb, var(--md-sys-color-surface-container) 72%, transparent);
+  --shadow-card: 0 1px 2px 0 rgba(0, 0, 0, 0.05), 0 1px 3px 1px rgba(0, 0, 0, 0.1);
+  --shadow-elevated: 0 4px 8px 3px rgba(0, 0, 0, 0.07), 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+  --shadow-glow: 0 0 20px rgba(var(--theme-color-rgb), 0.25);
+
+  /* MD3 Expressive 形状 Token */
+  --md-sys-shape-corner-none: 0px;
+  --md-sys-shape-corner-extra-small: 4px;
+  --md-sys-shape-corner-small: 8px;
+  --md-sys-shape-corner-medium: 12px;
+  --md-sys-shape-corner-large: 20px;
+  --md-sys-shape-corner-extra-large: 28px;
+  --md-sys-shape-corner-full: 9999px;
+
+  --radius-card: var(--md-sys-shape-corner-large);
+  --radius-btn: var(--md-sys-shape-corner-medium);
+  --radius-input: var(--md-sys-shape-corner-small);
+  --radius-window: 14px;
+
+  /* MD3 Elevation */
+  --md-sys-elevation-level0: none;
+  --md-sys-elevation-level1: 0 1px 2px 0 rgba(0, 0, 0, 0.05), 0 1px 3px 1px rgba(0, 0, 0, 0.1);
+  --md-sys-elevation-level2: 0 1px 2px 0 rgba(0, 0, 0, 0.05), 0 2px 6px 2px rgba(0, 0, 0, 0.1);
+  --md-sys-elevation-level3: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 4px 8px 3px rgba(0, 0, 0, 0.07);
+  --md-sys-elevation-level4: 0 2px 3px 0 rgba(0, 0, 0, 0.05), 0 6px 10px 4px rgba(0, 0, 0, 0.08);
+  --md-sys-elevation-level5: 0 4px 4px 0 rgba(0, 0, 0, 0.05), 0 8px 12px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* ===== 深色主题 ===== */
+.dark {
+  --md-sys-color-primary: #a8c7ff;
+  --md-sys-color-on-primary: #002f66;
+  --md-sys-color-primary-container: #004590;
+  --md-sys-color-on-primary-container: #d8e6ff;
+  --md-sys-color-secondary: #c5c6d0;
+  --md-sys-color-on-secondary: #2e3036;
+  --md-sys-color-secondary-container: #44474e;
+  --md-sys-color-on-secondary-container: #e1e2e8;
+  --md-sys-color-tertiary: #dfb8f0;
+  --md-sys-color-on-tertiary: #452259;
+  --md-sys-color-tertiary-container: #5d3b71;
+  --md-sys-color-on-tertiary-container: #f5d9ff;
+  --md-sys-color-error: #ffb4ab;
+  --md-sys-color-on-error: #690005;
+  --md-sys-color-error-container: #93000a;
+  --md-sys-color-on-error-container: #ffdad6;
+  --md-sys-color-surface: #131316;
+  --md-sys-color-on-surface: #e4e2e6;
+  --md-sys-color-surface-variant: #46464f;
+  --md-sys-color-on-surface-variant: #c7c5d0;
+  --md-sys-color-surface-container-lowest: #0f0f12;
+  --md-sys-color-surface-container-low: #1b1b1f;
+  --md-sys-color-surface-container: #1f1f23;
+  --md-sys-color-surface-container-high: #29292d;
+  --md-sys-color-surface-container-highest: #343438;
+  --md-sys-color-outline: #8f909a;
+  --md-sys-color-outline-variant: #46464f;
+  --md-sys-color-inverse-surface: #e4e2e6;
+  --md-sys-color-inverse-on-surface: #303034;
+  --md-sys-color-inverse-primary: #3b82f6;
+  --md-sys-color-scrim: rgba(0, 0, 0, 0.32);
+  --md-sys-color-shadow: rgba(0, 0, 0, 0.3);
+
+  --color-bg-primary: var(--md-sys-color-surface);
+  --color-bg-secondary: var(--md-sys-color-surface-container);
+  --color-bg-card: var(--md-sys-color-surface-container-high);
+  --color-text-primary: var(--md-sys-color-on-surface);
+  --color-text-secondary: var(--md-sys-color-on-surface-variant);
+  --color-border: var(--md-sys-color-outline-variant);
+  --color-glass-bg: color-mix(in srgb, var(--md-sys-color-surface-container) 72%, transparent);
+  --shadow-card: var(--md-sys-elevation-level1);
+  --shadow-elevated: var(--md-sys-elevation-level3);
+  --shadow-glow: 0 0 24px rgba(var(--theme-color-rgb), 0.35);
+}
+
+/* ===== 全局基础样式 ===== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: transparent;
+  user-select: none;
+}
+
+body {
+  background: transparent;
+  color: var(--md-sys-color-on-surface);
+}
+
+#root {
+  background: transparent;
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--md-sys-color-outline-variant);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-sys-color-outline);
+}
+
+/* 选中文本颜色 */
+::selection {
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+}
+
+/* 过渡动画 */
+.page-enter {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.2s ease-out, transform 0.25s ease-out;
+}
+.page-exit {
+  opacity: 1;
+}
+.page-exit-active {
+  opacity: 0;
+  transition: opacity 0.15s ease-in;
+}
+
+/* 像素风皮肤图片保持清晰 */
+.pixelated {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
