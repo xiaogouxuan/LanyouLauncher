@@ -134,18 +134,19 @@ export function TaskPanel({ open, onClose }: TaskPanelProps) {
   const completedTasks = tasks.filter((t) => t.status === "success" || t.status === "error");
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+    <div className="absolute inset-0 z-50 flex justify-end overflow-hidden">
       {/* 背景遮罩 */}
       <div
-        className={`absolute inset-0 bg-scrim transition-opacity duration-250 ${
+        className={`absolute inset-0 transition-opacity duration-250 ${
           open ? "opacity-100" : "opacity-0"
         }`}
+        style={{ backgroundColor: "rgba(var(--md-sys-color-surface-rgb), 0.5)" }}
         onClick={onClose}
       />
 
       {/* 抽屉 */}
       <div
-        className={`relative w-full max-w-[360px] h-full bg-surface-container-high border-l border-outline-variant shadow-lg flex flex-col rounded-l-2xl transition-transform duration-250 ease-standard ${
+        className={`relative w-full max-w-[360px] h-full border-l border-outline-variant shadow-lg flex flex-col rounded-l-2xl transition-transform duration-250 ease-standard ${
           open ? "translate-x-0" : "translate-x-full"
         }`}
         style={{ backgroundColor: "var(--md-sys-color-surface-container-high)" }}

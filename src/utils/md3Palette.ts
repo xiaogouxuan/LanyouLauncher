@@ -272,4 +272,13 @@ export function applyMd3PaletteToRoot(seedColor: string, isDark: boolean) {
   Object.entries(palette).forEach(([key, value]) => {
     root.style.setProperty(`--md-sys-color-${key}`, value);
   });
+
+  // 额外输出 surface 的 RGB 形式，便于半透明遮罩使用
+  const surfaceRgb = hexToRgb(palette.surface);
+  if (surfaceRgb) {
+    root.style.setProperty(
+      "--md-sys-color-surface-rgb",
+      `${surfaceRgb.r}, ${surfaceRgb.g}, ${surfaceRgb.b}`
+    );
+  }
 }

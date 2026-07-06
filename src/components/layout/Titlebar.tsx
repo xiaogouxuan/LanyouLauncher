@@ -3,15 +3,17 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, Copy, X, ListTodo } from "lucide-react";
 import { useTranslation } from "@/i18n";
 import { APP_NAME } from "@/utils/constants";
-import { TaskPanel } from "@/components/task/TaskPanel";
 import { useTaskStore } from "@/stores/taskStore";
 
 const logoUrl = new URL("/logo.png", import.meta.url).href;
 
-export function Titlebar() {
+interface TitlebarProps {
+  onOpenTasks: () => void;
+}
+
+export function Titlebar({ onOpenTasks }: TitlebarProps) {
   const { t } = useTranslation();
   const [isMaximized, setIsMaximized] = useState(false);
-  const [taskPanelOpen, setTaskPanelOpen] = useState(false);
   const activeTaskCount = useTaskStore((s) =>
     s.tasks.filter((t) => t.status === "running" || t.status === "pending").length
   );
@@ -88,7 +90,7 @@ export function Titlebar() {
       <div className="flex h-full" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         <button
           type="button"
-          onClick={() => setTaskPanelOpen(true)}
+          onClick={onOpenTasks}
           title={String(t("titlebar.tasks"))}
           className="relative w-10 h-full flex items-center justify-center text-on-surface-variant hover:bg-on-surface/[0.08] hover:text-on-surface rounded-none transition-colors"
         >
@@ -122,8 +124,6 @@ export function Titlebar() {
           <X size={16} />
         </button>
       </div>
-
-      <TaskPanel open={taskPanelOpen} onClose={() => setTaskPanelOpen(false)} />
     </div>
   );
 }

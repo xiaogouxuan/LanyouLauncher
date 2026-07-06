@@ -52,10 +52,10 @@ const sizeStyles: Record<string, string> = {
 };
 
 const fabStyles =
-  "w-14 h-14 rounded-full shadow-md hover:shadow-lg active:shadow-sm p-0 before:absolute before:inset-0 before:rounded-full before:bg-on-primary/0 hover:before:bg-on-primary/[0.08] active:before:bg-on-primary/[0.12]";
+  "w-14 h-14 rounded-2xl shadow-md hover:shadow-lg active:shadow-sm p-0 before:absolute before:inset-0 before:rounded-2xl before:bg-on-primary/0 hover:before:bg-on-primary/[0.08] active:before:bg-on-primary/[0.12]";
 
 const extendedFabStyles =
-  "px-5 h-14 rounded-full shadow-md hover:shadow-lg active:shadow-sm before:absolute before:inset-0 before:rounded-full before:bg-on-primary/0 hover:before:bg-on-primary/[0.08] active:before:bg-on-primary/[0.12]";
+  "px-5 h-14 rounded-btn shadow-md hover:shadow-lg active:shadow-sm before:absolute before:inset-0 before:rounded-btn before:bg-on-primary/0 hover:before:bg-on-primary/[0.08] active:before:bg-on-primary/[0.12]";
 
 export function Button({
   variant = "filled",

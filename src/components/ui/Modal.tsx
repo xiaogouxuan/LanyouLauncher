@@ -29,11 +29,12 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-scrim animate-fade-in"
+        className="absolute inset-0 animate-fade-in"
+        style={{ backgroundColor: "rgba(var(--md-sys-color-surface-rgb), 0.6)" }}
         onClick={onClose}
       />
       <div
-        className={`relative bg-surface rounded-2xl shadow-2xl border border-outline/30 
+        className={`relative rounded-2xl shadow-2xl border border-outline/30 
           max-w-lg w-full animate-slide-up isolate ${className}`}
         style={{ backgroundColor: "var(--md-sys-color-surface)" }}
       >
