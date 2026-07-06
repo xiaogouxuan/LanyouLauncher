@@ -138,17 +138,17 @@ html, body, #root {
   width: 100%;
   overflow: hidden;
   font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
-  background: transparent;
+  background: var(--md-sys-color-surface);
   user-select: none;
 }
 
 body {
-  background: transparent;
+  background: var(--md-sys-color-surface);
   color: var(--md-sys-color-on-surface);
 }
 
 #root {
-  background: transparent;
+  background: var(--md-sys-color-surface);
 }
 
 /* 滚动条美化 */

@@ -7,6 +7,25 @@ interface SkinAvatarProps {
   account: Account | null;
   size?: number;
   className?: string;
+  rounded?: "full" | "xl";
+}
+
+/**
+ * 判断默认皮肤模型：UUID 最低有效位为奇数 → Alex，否则 Steve
+ */
+function isSlimSkin(uuid: string): boolean {
+  try {
+    const hex = uuid.replace(/-/g, "").toLowerCase();
+    if (hex.length !== 32) return false;
+    const lsb = BigInt(`0x${hex.slice(16, 32)}`);
+    return (lsb & BigInt(1)) === BigInt(1);
+  } catch {
+    return false;
+  }
+}
+
+function getDefaultSkinUrl(account: Account): string {
+  return isSlimSkin(account.id) ? "/img/Alex.png" : "/img/Steve.png";
 }
 
 /**
@@ -65,7 +84,16 @@ async function loadSkinForAvatar(account: Account): Promise<HTMLImageElement | n
     }
   }
 
-  // 2. 在线 API 作为备用
+  // 2. 离线账号使用内置默认 Steve/Alex 皮肤
+  if (account.account_type === "Offline") {
+    try {
+      return await loadImage(getDefaultSkinUrl(account));
+    } catch {
+      // 兜底继续尝试在线
+    }
+  }
+
+  // 3. 在线 API 作为备用
   const uuid = account.id.replace(/-/g, "");
   const urls = [
     `https://crafatar.com/skins/${uuid}`,
@@ -83,7 +111,7 @@ async function loadSkinForAvatar(account: Account): Promise<HTMLImageElement | n
   return null;
 }
 
-export function SkinAvatar({ account, size = 40, className = "" }: SkinAvatarProps) {
+export function SkinAvatar({ account, size = 40, className = "", rounded = "xl" }: SkinAvatarProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<"loading" | "canvas" | "fallback">("loading");
 
@@ -140,12 +168,14 @@ export function SkinAvatar({ account, size = 40, className = "" }: SkinAvatarPro
     return () => { cancelled = true; };
   }, [account, drawHead]);
 
+  const radiusClass = rounded === "full" ? "rounded-full" : "rounded-xl";
+
   // 无账号
   if (!account) {
     return (
       <div
         style={{ width: size, height: size }}
-        className={`rounded-full bg-surface-container flex items-center justify-center ring-2 ring-surface/80 ${className}`}
+        className={`${radiusClass} bg-surface-container flex items-center justify-center ring-2 ring-surface/80 ${className}`}
       >
         <span className="text-xs font-semibold text-on-surface-variant select-none">
           ?
@@ -159,7 +189,7 @@ export function SkinAvatar({ account, size = 40, className = "" }: SkinAvatarPro
   return (
     <div
       style={{ width: size, height: size }}
-      className={`relative rounded-full overflow-hidden ring-2 ring-surface/80 bg-surface-container ${className}`}
+      className={`relative ${radiusClass} overflow-hidden ring-2 ring-surface/80 bg-surface-container ${className}`}
     >
       <canvas
         ref={canvasRef}
