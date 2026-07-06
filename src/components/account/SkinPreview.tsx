@@ -48,11 +48,11 @@ export function SkinPreview({ account, size = 96, className = "" }: SkinPreviewP
   if (!account || !skinUrl) {
     return (
       <div
-        style={{ width: size, height: size }}
-        className={`rounded-2xl bg-surface-container flex items-center justify-center ${className}`}
-      >
-        <span className="text-2xl">?</span>
-      </div>
+      style={{ width: size, height: size }}
+      className={`rounded-xl bg-surface-container flex items-center justify-center ${className}`}
+    >
+      <span className="text-2xl">?</span>
+    </div>
     );
   }
 

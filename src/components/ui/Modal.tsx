@@ -27,10 +27,10 @@ export function Modal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 rounded-window overflow-hidden">
       <div
         className="absolute inset-0 animate-fade-in"
-        style={{ backgroundColor: "rgba(var(--md-sys-color-surface-rgb), 0.6)" }}
+        style={{ backgroundColor: "var(--md-sys-color-scrim)" }}
         onClick={onClose}
       />
       <div

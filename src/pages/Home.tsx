@@ -243,14 +243,17 @@ export default function Home() {
                 </div>
               </>
             ) : (
-              <div className="text-left">
-                <p className="text-sm font-medium text-on-surface">
-                  未登录 Minecraft 账号
-                </p>
-                <p className="text-xs text-on-surface-variant">
-                  点击登录账号
-                </p>
-              </div>
+              <>
+                <SkinAvatar account={null} size={48} />
+                <div className="text-left">
+                  <p className="text-sm font-medium text-on-surface">
+                    未登录 Minecraft 账号
+                  </p>
+                  <p className="text-xs text-on-surface-variant">
+                    点击登录账号
+                  </p>
+                </div>
+              </>
             )}
           </button>
         </header>

@@ -114,6 +114,7 @@ async function loadSkinForAvatar(account: Account): Promise<HTMLImageElement | n
 export function SkinAvatar({ account, size = 40, className = "", rounded = "xl" }: SkinAvatarProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<"loading" | "canvas" | "fallback">("loading");
+  const [fallbackImg, setFallbackImg] = useState<string | null>(null);
 
   const drawHead = useCallback(
     (skinImg: HTMLImageElement) => {
@@ -123,6 +124,8 @@ export function SkinAvatar({ account, size = 40, className = "", rounded = "xl" 
       if (!ctx) return;
 
       if (skinImg.naturalWidth < 64 || skinImg.naturalHeight < 32) {
+        // 图片太小，直接用作 fallback img
+        setFallbackImg(skinImg.src);
         setStatus("fallback");
         return;
       }
@@ -136,6 +139,7 @@ export function SkinAvatar({ account, size = 40, className = "", rounded = "xl" 
   useEffect(() => {
     if (!account) {
       setStatus("fallback");
+      setFallbackImg(getDefaultSkinUrl({ id: "00000000-0000-0000-0000-000000000000", account_type: "Offline" } as Account));
       return;
     }
 
@@ -148,43 +152,32 @@ export function SkinAvatar({ account, size = 40, className = "", rounded = "xl" 
       img.onload = () => {
         if (!cancelled) drawHead(img);
       };
-      img.onerror = () => setStatus("fallback");
+      img.onerror = () => {
+        if (!cancelled) {
+          setFallbackImg(getDefaultSkinUrl(account));
+          setStatus("fallback");
+        }
+      };
       img.src = cached.headDataUrl;
       return;
     }
 
     (async () => {
       const img = await loadSkinForAvatar(account);
-      if (!img || cancelled) {
-        if (!cancelled) setStatus("fallback");
+      if (cancelled) return;
+      if (!img) {
+        setFallbackImg(getDefaultSkinUrl(account));
+        setStatus("fallback");
         return;
       }
-      if (!cancelled) {
-        cacheSkin(account.id, img);
-        drawHead(img);
-      }
+      cacheSkin(account.id, img);
+      drawHead(img);
     })();
 
     return () => { cancelled = true; };
   }, [account, drawHead]);
 
   const radiusClass = rounded === "full" ? "rounded-full" : "rounded-xl";
-
-  // 无账号
-  if (!account) {
-    return (
-      <div
-        style={{ width: size, height: size }}
-        className={`${radiusClass} bg-surface-container flex items-center justify-center ring-2 ring-surface/80 ${className}`}
-      >
-        <span className="text-xs font-semibold text-on-surface-variant select-none">
-          ?
-        </span>
-      </div>
-    );
-  }
-
-  const initial = account.username.charAt(0).toUpperCase();
 
   return (
     <div
@@ -197,12 +190,16 @@ export function SkinAvatar({ account, size = 40, className = "", rounded = "xl" 
         height={size}
         className={`absolute inset-0 w-full h-full pixelated ${status === "canvas" ? "opacity-100" : "opacity-0"}`}
       />
-      {status !== "canvas" && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-sm font-semibold text-on-surface-variant select-none">
-            {initial}
-          </span>
-        </div>
+      {status !== "canvas" && fallbackImg && (
+        <img
+          src={fallbackImg}
+          alt="avatar"
+          className="absolute inset-0 w-full h-full object-cover pixelated"
+          style={{ objectPosition: `0 ${-(size * 0.15)}px`, height: "auto", minHeight: "100%" }}
+        />
+      )}
+      {status !== "canvas" && !fallbackImg && (
+        <div className="absolute inset-0 flex items-center justify-center animate-pulse bg-surface-container-high" />
       )}
     </div>
   );
