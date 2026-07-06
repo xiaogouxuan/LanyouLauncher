@@ -630,7 +630,7 @@ export default function Versions() {
                 ) : (
                   groupedRemote.map(({ category, versions }) => (
                     <Card key={category.key} className="overflow-hidden">
-                      <div className="flex items-center gap-2 p-3 border-b border-outline-variant bg-surface-container/50">
+                      <div className="flex items-center gap-2 p-3 border-b border-outline-variant bg-surface-container">
                         <span className="text-primary">{category.icon}</span>
                         <h3 className="font-semibold text-on-surface">{t(category.labelKey)}</h3>
                         <Badge variant="default">{String(versions.length)}</Badge>

@@ -145,9 +145,10 @@ export function TaskPanel({ open, onClose }: TaskPanelProps) {
 
       {/* 抽屉 */}
       <div
-        className={`relative w-full max-w-[360px] h-full bg-surface-container-high border-l border-outline-variant shadow-lg flex flex-col transition-transform duration-250 ease-standard ${
+        className={`relative w-full max-w-[360px] h-full bg-surface-container-high border-l border-outline-variant shadow-lg flex flex-col rounded-l-2xl transition-transform duration-250 ease-standard ${
           open ? "translate-x-0" : "translate-x-full"
         }`}
+        style={{ backgroundColor: "var(--md-sys-color-surface-container-high)" }}
       >
         {/* 头部 */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant">

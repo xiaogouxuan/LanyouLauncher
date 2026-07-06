@@ -230,15 +230,28 @@ export default function Home() {
           <button
             type="button"
             onClick={() => navigate("/accounts")}
-            className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-surface-container/85 border border-outline/20 hover:bg-surface-container-high transition-colors flex-shrink-0"
+            className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-surface-container border border-outline/20 hover:bg-surface-container-high transition-colors flex-shrink-0"
           >
-            <SkinAvatar account={activeAccount || null} size={48} />
-            <div className="text-left hidden sm:block">
-              <p className="text-sm font-medium text-on-surface truncate max-w-[120px]">
-                {activeAccount?.username || t("home.noAccount")}
-              </p>
-              <p className="text-xs text-on-surface-variant">{accountModeLabel}</p>
-            </div>
+            {activeAccount ? (
+              <>
+                <SkinAvatar account={activeAccount} size={48} />
+                <div className="text-left hidden sm:block">
+                  <p className="text-sm font-medium text-on-surface truncate max-w-[120px]">
+                    {activeAccount.username}
+                  </p>
+                  <p className="text-xs text-on-surface-variant">{accountModeLabel}</p>
+                </div>
+              </>
+            ) : (
+              <div className="text-left">
+                <p className="text-sm font-medium text-on-surface">
+                  未登录 Minecraft 账号
+                </p>
+                <p className="text-xs text-on-surface-variant">
+                  点击登录账号
+                </p>
+              </div>
+            )}
           </button>
         </header>
 
@@ -252,10 +265,10 @@ export default function Home() {
             <div>
               <p className="text-xs text-on-surface-variant mb-1.5">{t("home.currentVersion")}</p>
               <button
-                type="button"
-                onClick={() => setVersionModalOpen(true)}
-                className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-surface-container/85 border border-outline/20 text-on-surface hover:bg-surface-container-high transition-colors"
-              >
+              type="button"
+              onClick={() => setVersionModalOpen(true)}
+              className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-surface-container border border-outline/20 text-on-surface hover:bg-surface-container-high transition-colors"
+            >
                 <div className="w-10 h-10 rounded-xl bg-primary-container flex items-center justify-center flex-shrink-0">
                   <User size={20} className="text-on-primary-container" />
                 </div>
@@ -288,7 +301,7 @@ export default function Home() {
 
             {/* 日志折叠 */}
             {(isLaunching || isRunning || logs.length > 0) && (
-              <div className="w-full md:min-w-[360px] md:max-w-md rounded-2xl bg-surface-container/85 border border-outline/20 overflow-hidden">
+              <div className="w-full md:min-w-[360px] md:max-w-md rounded-2xl bg-surface-container border border-outline/20 overflow-hidden">
                 <button
                   type="button"
                   onClick={() => setShowLogs((v) => !v)}
@@ -368,7 +381,7 @@ export default function Home() {
 
             {/* 启动进度 */}
             {(isLaunching || (isRunning && launchProgress.step > 0)) && (
-              <div className="w-full md:min-w-[360px] md:max-w-md rounded-2xl bg-surface-container/85 border border-outline/20 p-4">
+              <div className="w-full md:min-w-[360px] md:max-w-md rounded-2xl bg-surface-container border border-outline/20 p-4">
                 <div className="flex items-center justify-between text-xs mb-2">
                   <span className="text-on-surface-variant">{t("home.launchProgress")}</span>
                   <span className="text-primary font-medium">

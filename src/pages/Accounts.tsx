@@ -175,12 +175,6 @@ export default function Accounts() {
             icon={<User size={48} className="text-on-surface-variant" />}
             title={t("account.emptyTitle")}
             description={t("account.addAccountToStart")}
-            action={
-              <Button onClick={() => setShowAddModal(true)}>
-                <Plus size={18} />
-                {t("account.addAccount")}
-              </Button>
-            }
           />
         ) : (
           <div className="space-y-4 overflow-y-auto pr-1">

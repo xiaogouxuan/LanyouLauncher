@@ -34,7 +34,8 @@ export function Modal({
       />
       <div
         className={`relative bg-surface rounded-2xl shadow-2xl border border-outline/30 
-          max-w-lg w-full animate-slide-up ${className}`}
+          max-w-lg w-full animate-slide-up isolate ${className}`}
+        style={{ backgroundColor: "var(--md-sys-color-surface)" }}
       >
         {title && (
           <div className="flex items-center justify-between px-6 pt-5 pb-2">

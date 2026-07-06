@@ -17,8 +17,9 @@ export function Sidebar() {
 
   return (
     <div
-      className={`flex flex-col h-full bg-surface-container/80 border-r border-outline/20 transition-all duration-300
+      className={`flex flex-col h-full bg-surface-container border-r border-outline/20 transition-all duration-300
         ${sidebarCollapsed ? "w-[64px]" : "w-[210px]"}`}
+      style={{ backgroundColor: "var(--md-sys-color-surface-container)" }}
     >
       {/* 导航项 */}
       <nav className="flex-1 flex flex-col gap-1 px-2 py-4">

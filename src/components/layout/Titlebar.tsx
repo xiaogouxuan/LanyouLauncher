@@ -66,6 +66,7 @@ export function Titlebar() {
   return (
     <div
       className="h-10 flex items-center justify-between bg-surface-container border-b border-outline/30 select-none rounded-t-window"
+      style={{ backgroundColor: "var(--md-sys-color-surface-container)" }}
       onDoubleClick={handleMaximize}
     >
       {/* 左侧：拖拽区域 */}
