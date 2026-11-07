@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/xiaogouxuan/LanyouLauncher/releases"><img src="https://img.shields.io/github/v/release/xiaogouxuan/LanyouLauncher?include_prereleases&style=flat-square" alt="Release" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/status-beta-orange?style=flat-square" alt="Status" />
   <img src="https://img.shields.io/badge/tauri-v2-ffc131?style=flat-square" alt="Tauri v2" />
   <img src="https://img.shields.io/badge/react-18-61dafb?style=flat-square" alt="React 18" />
@@ -356,7 +356,9 @@ cd src-tauri && cargo check
 
 ## 许可证
 
-本项目基于 [MIT](LICENSE) 许可证开源。
+本项目基于 [GNU General Public License v3.0](LICENSE)（GPL-3.0）开源。
+
+你可以自由使用、修改和分发本项目，但分发衍生作品时必须保留相同的开源许可证，并提供完整的源代码。
 
 ---
 
