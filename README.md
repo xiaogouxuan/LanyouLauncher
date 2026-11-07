@@ -134,7 +134,8 @@ LanyouLauncher 是一个基于 [Tauri v2](https://v2.tauri.app/) 的 Minecraft �
 
 前往 [GitHub Releases](https://github.com/xiaogouxuan/LanyouLauncher/releases) 下载最新版本：
 
-- Windows：`LanyouLauncher_0.5.0_x64-setup.exe`
+- Windows 安装版：`LanyouLauncher_0.5.0_x64-setup.exe`
+- Windows 便携版：`LanyouLauncher_0.5.0-portable.exe`
 
 安装包仅用于安装程序本体。首次启动时，启动器会在自身目录创建 `LanyouLauncher` 与 `.minecraft` 文件夹。
 
