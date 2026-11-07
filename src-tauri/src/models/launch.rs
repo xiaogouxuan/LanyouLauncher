@@ -21,6 +21,9 @@ pub struct LaunchConfig {
     pub java_path: String,
     /// 自定义游戏目录（可选）
     pub game_dir: Option<String>,
+    /// 联机一键进服地址（可选），例如 10.126.126.1:25565
+    #[serde(default)]
+    pub server_address: Option<String>,
 }
 
 /// 日志条目
@@ -37,4 +40,11 @@ pub struct LaunchProgress {
     pub step: u32,
     pub total: u32,
     pub label: String,
+}
+
+/// 已启动的游戏实例
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LaunchInstance {
+    pub pid: u32,
+    pub version_id: String,
 }

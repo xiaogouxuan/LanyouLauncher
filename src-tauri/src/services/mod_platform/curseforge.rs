@@ -3,14 +3,36 @@
 
 use crate::i18n::I18nError;
 use crate::i18n_err;
-use crate::models::mod_info::{ModInfo, ModSource};
+use crate::models::mod_info::{DownloadedModFile, ModInfo, ModSource};
 use crate::models::version::LoaderType;
 use crate::state::app_state::AppState;
 use serde::Deserialize;
 use tauri::Emitter;
 
 const CURSEFORGE_API: &str = "https://api.curseforge.com/v1";
-const CURSEFORGE_API_KEY: &str = "$2a$10$AwzejHxGS4GBJrKYZupFf.1HJOqHHqESpB6v8qNPRHCqMp6XrmpQe";
+
+/// 读取 CurseForge API Key。
+/// 优先级：settings.curseforge_api_key > 环境变量 CURSEFORGE_API_KEY > 错误。
+pub fn get_curseforge_api_key(state: &AppState) -> Result<String, I18nError> {
+    let settings_file = crate::utils::paths::get_settings_file(&state.launcher_dir);
+    let from_settings = std::fs::read_to_string(&settings_file)
+        .ok()
+        .and_then(|content| serde_json::from_str::<crate::models::settings::Settings>(&content).ok())
+        .map(|s| s.curseforge_api_key)
+        .filter(|s| !s.trim().is_empty());
+
+    if let Some(key) = from_settings {
+        return Ok(key);
+    }
+
+    if let Ok(key) = std::env::var("CURSEFORGE_API_KEY") {
+        if !key.trim().is_empty() {
+            return Ok(key);
+        }
+    }
+
+    Err(i18n_err!("errors.mod.curseforgeApiKeyMissing"))
+}
 
 #[derive(Debug, Deserialize)]
 struct CurseForgeSearchResponse {
@@ -58,6 +80,7 @@ pub async fn search_curseforge(
     version: Option<&str>,
     loader: Option<&str>,
 ) -> Result<Vec<ModInfo>, I18nError> {
+    let api_key = get_curseforge_api_key(state)?;
     let encoded_query: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
     let mut url = format!(
         "{}/mods/search?gameId=432&searchFilter={}&pageSize=20",
@@ -77,7 +100,7 @@ pub async fn search_curseforge(
     let response = state
         .http_client
         .get(&url)
-        .header("x-api-key", CURSEFORGE_API_KEY)
+        .header("x-api-key", &api_key)
         .send()
         .await
         .map_err(|e| i18n_err!("errors.mod.curseforgeSearchFailed", e))?;
@@ -105,9 +128,11 @@ pub async fn search_curseforge(
         if let Ok(Some(file)) = matched {
             results.push(ModInfo {
                 id: m.id.to_string(),
+                project_id: Some(m.id.to_string()),
                 name: m.name,
                 version: file.file_name.clone(),
                 version_id: file.id.to_string(),
+                file_name: Some(file.file_name.clone()),
                 loader: loader_type.clone(),
                 game_version: file
                     .game_versions
@@ -119,6 +144,9 @@ pub async fn search_curseforge(
                 source: ModSource::CurseForge,
                 enabled: true,
                 dependencies: Vec::new(),
+                install_path: None,
+                instance_id: None,
+                is_isolated: None,
             });
         }
     }
@@ -158,6 +186,7 @@ async fn find_best_curseforge_file(
     version: Option<&str>,
     loader_type_id: Option<u64>,
 ) -> Result<Option<CurseForgeFile>, I18nError> {
+    let api_key = get_curseforge_api_key(state)?;
     let mut url = format!("{}/mods/{}/files?pageSize=1", CURSEFORGE_API, mod_id);
     if let Some(v) = version {
         url.push_str(&format!("&gameVersion={}", v));
@@ -169,7 +198,7 @@ async fn find_best_curseforge_file(
     let response = state
         .http_client
         .get(&url)
-        .header("x-api-key", CURSEFORGE_API_KEY)
+        .header("x-api-key", &api_key)
         .send()
         .await
         .map_err(|e| i18n_err!("errors.mod.fetchCurseforgeFileFailed", e))?;
@@ -191,11 +220,12 @@ pub async fn get_curseforge_mod(
     state: &AppState,
     mod_id: &str,
 ) -> Result<ModInfo, I18nError> {
+    let api_key = get_curseforge_api_key(state)?;
     let url = format!("{}/mods/{}", CURSEFORGE_API, mod_id);
     let response = state
         .http_client
         .get(&url)
-        .header("x-api-key", CURSEFORGE_API_KEY)
+        .header("x-api-key", &api_key)
         .send()
         .await
         .map_err(|e| i18n_err!("errors.mod.fetchCurseforgeProjectFailed", e))?;
@@ -210,6 +240,7 @@ pub async fn get_curseforge_mod(
 
     Ok(ModInfo {
         id: data["id"].to_string(),
+        project_id: Some(data["id"].to_string()),
         name: data["name"].as_str().unwrap_or("Unknown").to_string(),
         version: latest_file
             .and_then(|f| f["gameVersions"].as_array())
@@ -221,6 +252,9 @@ pub async fn get_curseforge_mod(
             .and_then(|f| f["id"].as_u64())
             .map(|id| id.to_string())
             .unwrap_or_default(),
+        file_name: latest_file
+            .and_then(|f| f["fileName"].as_str())
+            .map(String::from),
         loader: LoaderType::Fabric,
         game_version: latest_file
             .and_then(|f| f["gameVersions"].as_array())
@@ -233,7 +267,69 @@ pub async fn get_curseforge_mod(
         source: ModSource::CurseForge,
         enabled: true,
         dependencies: Vec::new(),
+        install_path: None,
+        instance_id: None,
+        is_isolated: None,
     })
+}
+
+/// 获取 CurseForge Mod 的所有可用文件（按游戏版本和加载器过滤）
+pub async fn get_curseforge_files(
+    state: &AppState,
+    mod_id: &str,
+    version: Option<&str>,
+    loader: Option<&str>,
+) -> Result<Vec<crate::models::mod_info::ModVersionInfo>, I18nError> {
+    let api_key = get_curseforge_api_key(state)?;
+    let mod_id_num: u64 = mod_id.parse().map_err(|_| i18n_err!("errors.mod.invalidModId"))?;
+    let loader_type_id = curseforge_loader_type_id(loader);
+
+    let mut url = format!("{}/mods/{}/files?pageSize=50", CURSEFORGE_API, mod_id_num);
+    if let Some(v) = version {
+        url.push_str(&format!("&gameVersion={}", v));
+    }
+    if let Some(id) = loader_type_id {
+        url.push_str(&format!("&modLoaderType={}", id));
+    }
+
+    let response = state
+        .http_client
+        .get(&url)
+        .header("x-api-key", &api_key)
+        .send()
+        .await
+        .map_err(|e| i18n_err!("errors.mod.fetchCurseforgeFileFailed", e))?;
+
+    if !response.status().is_success() {
+        let text = response.text().await.unwrap_or_default();
+        return Err(i18n_err!("errors.mod.fetchCurseforgeFileFailed", text));
+    }
+
+    let body: CurseForgeFilesResponse = response
+        .json()
+        .await
+        .map_err(|e| i18n_err!("errors.mod.parseCurseforgeFileFailed", e))?;
+
+    let loader_type = parse_loader_type(loader);
+    let mut result = Vec::new();
+    for file in body.data {
+        let download_url = file.download_url.unwrap_or_default();
+        if download_url.is_empty() {
+            continue;
+        }
+        result.push(crate::models::mod_info::ModVersionInfo {
+            version_id: file.id.to_string(),
+            version_number: file.file_name.clone(),
+            game_versions: file.game_versions.clone(),
+            loaders: vec![loader_type.clone()],
+            file_name: file.file_name.clone(),
+            file_size: 0,
+            download_url,
+            dependencies: Vec::new(),
+        });
+    }
+
+    Ok(result)
 }
 
 /// 下载 CurseForge Mod 文件
@@ -244,7 +340,9 @@ pub async fn download_curseforge_mod(
     mod_id: &str,
     file_id: &str,
     output_dir: &std::path::Path,
-) -> Result<(), I18nError> {
+) -> Result<DownloadedModFile, I18nError> {
+    let api_key = get_curseforge_api_key(state)?;
+
     let emit_progress = |app: &tauri::AppHandle, current: u64, total: u64, status: &str| {
         let _ = app.emit(
             "download-progress",
@@ -254,6 +352,8 @@ pub async fn download_curseforge_mod(
                 total,
                 current,
                 status: status.to_string(),
+                speed: None,
+                stage: None,
             },
         );
     };
@@ -265,7 +365,7 @@ pub async fn download_curseforge_mod(
     let response = state
         .http_client
         .get(&url)
-        .header("x-api-key", CURSEFORGE_API_KEY)
+        .header("x-api-key", &api_key)
         .send()
         .await
         .map_err(|e| i18n_err!("errors.mod.fetchCurseforgeFileFailed", e))?;
@@ -284,6 +384,10 @@ pub async fn download_curseforge_mod(
     let file_name = data["fileName"]
         .as_str()
         .unwrap_or("mod.jar");
+    let display_name = data["displayName"]
+        .as_str()
+        .unwrap_or(file_name)
+        .to_string();
 
     // 下载文件
     let bytes = state
@@ -308,5 +412,9 @@ pub async fn download_curseforge_mod(
 
     emit_progress(app_handle, 3, 3, "mod.downloadComplete");
 
-    Ok(())
+    Ok(DownloadedModFile {
+        file_name: file_name.to_string(),
+        version_number: display_name.clone(),
+        name: display_name,
+    })
 }

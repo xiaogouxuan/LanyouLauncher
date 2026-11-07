@@ -4,22 +4,14 @@ interface ContentAreaProps {
   children: ReactNode;
 }
 
+/**
+ * 内容区：所有页面都完整透出壁纸，与首页保持完全一致的色彩与透明度。
+ * 页面内容统一顶到最上方；壁纸顶部的 logo 只在首页展示，其余页面不再为它预留高度。
+ */
 export function ContentArea({ children }: ContentAreaProps) {
   return (
     <main className="relative flex-1 overflow-y-auto overflow-x-hidden isolate">
-      {/* 背景图层：只在内容区展示壁纸 */}
-      <div
-        className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat transition-all duration-300 -z-10"
-        style={{
-          backgroundImage: "var(--background-image)",
-          opacity: "var(--background-opacity)",
-          filter: "blur(var(--background-blur))",
-        }}
-      />
-
-      <div className="relative z-0 min-h-full">
-        {children}
-      </div>
+      <div className="relative z-[1] min-h-full">{children}</div>
     </main>
   );
 }

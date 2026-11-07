@@ -9,13 +9,13 @@ interface EmptyStateProps {
 
 export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 px-4">
-      <div className="text-on-surface-variant/40 mb-4">
-        {icon || <Inbox size={48} />}
+    <div className="w-full max-w-[440px] mx-auto flex flex-col items-center justify-center py-10 px-4 rounded-[10px] border border-dashed border-outline-variant bg-surface-high">
+      <div className="text-on-surface-subtle mb-3">
+        {icon || <Inbox size={40} />}
       </div>
-      <p className="text-on-surface font-medium mb-1">{title}</p>
+      <p className="text-[13px] text-on-surface font-medium mb-1">{title}</p>
       {description && (
-        <p className="text-sm text-on-surface-variant mb-4">{description}</p>
+        <p className="text-xs text-on-surface-variant mb-4 max-w-sm text-center">{description}</p>
       )}
       {action}
     </div>

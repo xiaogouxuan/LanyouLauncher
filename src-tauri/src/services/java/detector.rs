@@ -23,11 +23,9 @@ fn java_command<S: AsRef<OsStr>>(path: S) -> Command {
 pub fn detect_java_runtimes() -> Vec<String> {
     let mut java_paths = Vec::new();
 
-    // 1. 检查系统 PATH 中的 java
-    if let Ok(output) = java_command("java").arg("-version").output() {
-        if output.status.success() {
-            java_paths.push("java".to_string());
-        }
+    // 1. 检查系统 PATH 中的 java，尝试解析为绝对路径
+    if let Some(path_java) = resolve_path_java() {
+        java_paths.push(path_java);
     }
 
     // 2. 扫描常见安装目录
@@ -55,16 +53,43 @@ pub fn detect_java_runtimes() -> Vec<String> {
     java_paths
 }
 
+/// 解析 PATH 中的 java 为绝对路径；解析失败则返回 None，避免展示无路径的 "java"
+fn resolve_path_java() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let output = java_command("where").arg("java").output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|s| s.trim().to_string())
+            .find(|line| {
+                let lower = line.to_lowercase();
+                (lower.ends_with("java.exe") || lower.ends_with("javaw.exe")) && std::path::Path::new(line).is_absolute()
+            })
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let output = java_command("which").arg("java").output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if std::path::Path::new(&path).is_absolute() {
+            Some(path)
+        } else {
+            None
+        }
+    }
+}
+
 /// 检测 Java 运行时并附带版本信息，用于设置页面展示
 pub fn detect_java_runtimes_with_version() -> Vec<(String, String)> {
     let mut results = Vec::new();
 
     for path in detect_java_runtimes() {
-        let version = if path == "java" {
-            get_java_version_from_command("java").unwrap_or_default()
-        } else {
-            get_java_version(&PathBuf::from(&path)).unwrap_or_default()
-        };
+        let version = get_java_version(&PathBuf::from(&path)).unwrap_or_default();
         results.push((path, version));
     }
 
@@ -145,7 +170,7 @@ fn find_java_executable(dir: &PathBuf) -> Option<PathBuf> {
 }
 
 /// 获取 Java 版本号
-fn get_java_version(java_path: &PathBuf) -> Result<String, I18nError> {
+pub fn get_java_version(java_path: &PathBuf) -> Result<String, I18nError> {
     let output = java_command(java_path)
         .arg("-version")
         .output()

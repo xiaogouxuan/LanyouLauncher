@@ -3,13 +3,18 @@
 
 use crate::i18n::I18nError;
 use crate::i18n_err;
-use crate::models::mod_info::{ModInfo, ModSource};
+use crate::models::mod_info::{DownloadedModFile, ModInfo, ModSource};
 use crate::models::version::LoaderType;
 use crate::state::app_state::AppState;
 use serde::Deserialize;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use tauri::Emitter;
 
 const MODRINTH_API: &str = "https://api.modrinth.com/v2";
+/// 版本列表缓存有效期：详情页与版本选择器复用，避免重复请求拖慢界面
+const VERSION_CACHE_TTL: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Deserialize)]
 struct ModrinthSearchResponse {
@@ -27,6 +32,9 @@ struct ModrinthSearchHit {
     client_side: String,
     server_side: String,
     downloads: u64,
+    /// Modrinth 搜索结果直接携带最新版本 ID，列表页无需再逐个项目查版本
+    #[serde(default)]
+    latest_version: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,7 +48,7 @@ struct ModrinthProject {
     loaders: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct ModrinthVersion {
     id: String,
     name: String,
@@ -51,14 +59,14 @@ struct ModrinthVersion {
     dependencies: Vec<ModrinthDependency>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct ModrinthFile {
     url: String,
     filename: String,
     size: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct ModrinthDependency {
     project_id: Option<String>,
     version_id: Option<String>,
@@ -73,11 +81,12 @@ pub async fn search_modrinth(
     version: Option<&str>,
     loader: Option<&str>,
 ) -> Result<Vec<ModInfo>, I18nError> {
-    let mut facets: Vec<String> = Vec::new();
+    // Modrinth 的 facets 是“二维数组”：外层为 AND，内层为 OR
+    let mut facets: Vec<Vec<String>> = Vec::new();
 
     // 添加版本过滤
     if let Some(v) = version {
-        facets.push(format!("[[\"versions:{}\"]]", v));
+        facets.push(vec![format!("versions:{}", v)]);
     }
 
     // 添加加载器过滤
@@ -89,13 +98,15 @@ pub async fn search_modrinth(
         _ => l,
     });
     if let Some(l) = loader_str {
-        facets.push(format!("[[\"categories:{}\"]]", l));
+        facets.push(vec![format!("categories:{}", l)]);
     }
 
     let facets_param = if facets.is_empty() {
         String::new()
     } else {
-        format!("&facets=[{}]", facets.join(","))
+        let json = serde_json::to_string(&facets).unwrap_or_default();
+        let encoded: String = url::form_urlencoded::byte_serialize(json.as_bytes()).collect();
+        format!("&facets={}", encoded)
     };
 
     let encoded_query: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
@@ -121,62 +132,66 @@ pub async fn search_modrinth(
         .await
         .map_err(|e| i18n_err!("errors.mod.parseModrinthResponseFailed", e))?;
 
-    let loader_type = parse_loader_type(loader);
+    // 显式指定加载器时按用户选择；未指定时按项目分类推断，避免给非 Fabric 模组贴错标签
+    let loader_type = loader.map(|l| parse_loader_type(Some(l)));
 
-    // 为每个项目查找最匹配的版本
-    let mut results = Vec::new();
-    for hit in body.hits {
-        let matched = find_best_modrinth_version(
-            state,
-            &hit.project_id,
-            version,
-            loader_str,
-        )
-        .await;
-
-        if let Ok(Some(v)) = matched {
-            let dependencies = v
-                .dependencies
-                .into_iter()
-                .filter(|d| d.dependency_type == "required")
-                .filter_map(|d| {
-                    d.project_id.map(|id| crate::models::mod_info::ModDependency {
-                        id,
-                        name: String::new(),
-                        required: true,
-                    })
-                })
-                .collect();
-            results.push(ModInfo {
-                id: hit.project_id,
-                name: hit.title,
-                version: v.version_number.clone(),
-                version_id: v.id,
-                loader: loader_type.clone(),
-                game_version: v
-                    .game_versions
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| version.unwrap_or("").to_string()),
-                description: hit.description,
-                icon_url: hit.icon_url,
-                source: ModSource::Modrinth,
-                enabled: true,
-                dependencies,
-            });
-        }
-    }
+    /*
+     * 搜索结果已包含卡片展示所需的全部字段，不再为每个项目单独查询版本列表：
+     * 原实现的 20 次并发请求会把列表页拖慢成十几秒，而版本列表在用户
+     * 点开某个模组时（get_modrinth_versions）按需加载即可。
+     */
+    let results = body
+        .hits
+        .into_iter()
+        .map(|hit| {
+            let hit_loader = match &loader_type {
+                Some(loader) => loader.clone(),
+                None => loader_from_categories(&hit.categories),
+            };
+            ModInfo {
+            id: hit.project_id.clone(),
+            project_id: Some(hit.project_id),
+            name: hit.title,
+            version: hit.versions.last().cloned().unwrap_or_default(),
+            version_id: hit.latest_version.unwrap_or_default(),
+            file_name: None,
+            loader: hit_loader,
+            game_version: version.map(|v| v.to_string()).unwrap_or_default(),
+            description: hit.description,
+            icon_url: hit.icon_url,
+            source: ModSource::Modrinth,
+            enabled: true,
+            dependencies: Vec::new(),
+            install_path: None,
+            instance_id: None,
+            is_isolated: None,
+            }
+        })
+        .collect();
 
     Ok(results)
 }
 
-/// 从 Modrinth 项目版本中选出匹配目标游戏版本和加载器的最新版本
-async fn find_best_modrinth_version(
+/// Modrinth 项目版本列表缓存（全局共享，5 分钟过期）
+fn version_cache() -> &'static Mutex<HashMap<String, (Instant, Vec<ModrinthVersion>)>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, Vec<ModrinthVersion>)>>> =
+        OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 读取项目版本列表，命中缓存时直接返回
+async fn fetch_project_versions(
     state: &AppState,
     project_id: &str,
-    version: Option<&str>,
-    loader: Option<&str>,
-) -> Result<Option<ModrinthVersion>, I18nError> {
+) -> Result<Vec<ModrinthVersion>, I18nError> {
+    if let Ok(cache) = version_cache().lock() {
+        if let Some((cached_at, versions)) = cache.get(project_id) {
+            if cached_at.elapsed() < VERSION_CACHE_TTL {
+                return Ok(versions.clone());
+            }
+        }
+    }
+
     let url = format!("{}/project/{}/version", MODRINTH_API, project_id);
     let response = state
         .http_client
@@ -190,14 +205,91 @@ async fn find_best_modrinth_version(
         .await
         .map_err(|e| i18n_err!("errors.mod.parseVersionInfoFailed", e))?;
 
-    // Modrinth 返回的版本默认按时间倒序，取第一个匹配的即可
-    let matched = versions.into_iter().find(|v| {
-        let game_match = version.map(|target| v.game_versions.iter().any(|gv| gv == target)).unwrap_or(true);
-        let loader_match = loader.map(|target| v.loaders.iter().any(|l| l.eq_ignore_ascii_case(target))).unwrap_or(true);
-        game_match && loader_match && !v.files.is_empty()
-    });
+    if let Ok(mut cache) = version_cache().lock() {
+        // 简单容量控制，避免长时间运行后无限增长
+        if cache.len() >= 200 {
+            cache.retain(|_, (cached_at, _)| cached_at.elapsed() < VERSION_CACHE_TTL);
+        }
+        cache.insert(project_id.to_string(), (Instant::now(), versions.clone()));
+    }
 
-    Ok(matched)
+    Ok(versions)
+}
+
+/// 获取 Modrinth 项目的所有可用版本（按游戏版本和加载器过滤）
+pub async fn get_modrinth_versions(
+    state: &AppState,
+    project_id: &str,
+    version: Option<&str>,
+    loader: Option<&str>,
+) -> Result<Vec<crate::models::mod_info::ModVersionInfo>, I18nError> {
+    let versions = fetch_project_versions(state, project_id).await?;
+
+    let loader_str = loader.map(|l| l.to_lowercase());
+    let mut result = Vec::new();
+    for v in versions {
+        let game_match = version
+            .map(|target| v.game_versions.iter().any(|gv| gv == target))
+            .unwrap_or(true);
+        let loader_match = loader_str
+            .as_ref()
+            .map(|target| v.loaders.iter().any(|l| l.eq_ignore_ascii_case(target)))
+            .unwrap_or(true);
+        if !(game_match && loader_match && !v.files.is_empty()) {
+            continue;
+        }
+
+        let file = &v.files[0];
+        let dependencies = v
+            .dependencies
+            .iter()
+            .filter(|d| d.dependency_type == "required")
+            .filter_map(|d| {
+                d.project_id.as_ref().map(|id| crate::models::mod_info::ModDependency {
+                    id: id.clone(),
+                    name: String::new(),
+                    required: true,
+                })
+            })
+            .collect();
+
+        result.push(crate::models::mod_info::ModVersionInfo {
+            version_id: v.id,
+            version_number: v.version_number,
+            game_versions: v.game_versions,
+            loaders: v
+                .loaders
+                .iter()
+                .filter_map(|l| match l.to_lowercase().as_str() {
+                    "forge" => Some(LoaderType::Forge),
+                    "fabric" => Some(LoaderType::Fabric),
+                    "neoforge" => Some(LoaderType::NeoForge),
+                    "quilt" => Some(LoaderType::Quilt),
+                    _ => None,
+                })
+                .collect(),
+            file_name: file.filename.clone(),
+            file_size: file.size,
+            download_url: file.url.clone(),
+            dependencies,
+        });
+    }
+
+    Ok(result)
+}
+
+/// 搜索结果未指定加载器时，从项目分类中推断一个用于展示的加载器
+fn loader_from_categories(categories: &[String]) -> LoaderType {
+    for category in categories {
+        match category.to_lowercase().as_str() {
+            "fabric" => return LoaderType::Fabric,
+            "forge" => return LoaderType::Forge,
+            "neoforge" => return LoaderType::NeoForge,
+            "quilt" => return LoaderType::Quilt,
+            _ => {}
+        }
+    }
+    LoaderType::Fabric
 }
 
 fn parse_loader_type(loader: Option<&str>) -> LoaderType {
@@ -251,34 +343,37 @@ pub async fn get_modrinth_mod(
         .await
         .map_err(|e| i18n_err!("errors.mod.parseProjectDetailsFailed", e))?;
 
-    // 获取首个可用版本 ID 作为 version_id
-    let versions_url = format!("{}/project/{}/version", MODRINTH_API, mod_id);
-    let version_id = state
-        .http_client
-        .get(&versions_url)
-        .send()
+    // 版本信息走缓存，详情页与搜索结果保持一致，也避免重复请求
+    let versions = fetch_project_versions(state, mod_id)
         .await
-        .map_err(|e| i18n_err!("errors.mod.fetchModrinthVersionFailed", e))?
-        .json::<Vec<ModrinthVersion>>()
-        .await
-        .map_err(|e| i18n_err!("errors.mod.parseVersionInfoFailed", e))?
-        .into_iter()
-        .next()
-        .map(|v| v.id)
         .unwrap_or_default();
+    let latest = versions.first();
+    let version_id = latest.map(|v| v.id.clone()).unwrap_or_default();
+    let loader = latest
+        .and_then(|v| v.loaders.first())
+        .map(|l| l.as_str());
 
     Ok(ModInfo {
-        id: project.id,
+        id: project.id.clone(),
+        project_id: Some(project.id),
         name: project.title,
-        version: project.game_versions.first().cloned().unwrap_or_default(),
+        version: latest
+            .map(|v| v.version_number.clone())
+            .unwrap_or_default(),
         version_id,
-        loader: LoaderType::Fabric,
+        file_name: latest
+            .and_then(|v| v.files.first())
+            .map(|f| f.filename.clone()),
+        loader: parse_loader_type(loader),
         game_version: project.game_versions.first().cloned().unwrap_or_default(),
         description: project.description,
         icon_url: project.icon_url,
         source: ModSource::Modrinth,
         enabled: true,
         dependencies: Vec::new(),
+        install_path: None,
+        instance_id: None,
+        is_isolated: None,
     })
 }
 
@@ -290,7 +385,7 @@ pub async fn download_modrinth_mod(
     _mod_id: &str,
     version_id: &str,
     output_dir: &std::path::Path,
-) -> Result<(), I18nError> {
+) -> Result<DownloadedModFile, I18nError> {
     let emit_progress = |app: &tauri::AppHandle, current: u64, total: u64, status: &str| {
         let _ = app.emit(
             "download-progress",
@@ -300,6 +395,8 @@ pub async fn download_modrinth_mod(
                 total,
                 current,
                 status: status.to_string(),
+                speed: None,
+                stage: None,
             },
         );
     };
@@ -350,5 +447,9 @@ pub async fn download_modrinth_mod(
 
     emit_progress(app_handle, 3, 3, "mod.downloadComplete");
 
-    Ok(())
+    Ok(DownloadedModFile {
+        file_name: file.filename.clone(),
+        version_number: version.version_number.clone(),
+        name: version.name.clone(),
+    })
 }

@@ -23,7 +23,7 @@ export function Avatar({
   return (
     <div
       className={`${sizeMap[size]} rounded-full overflow-hidden bg-primary-container flex items-center justify-center 
-        ring-2 ring-surface/80 shadow-md flex-shrink-0 ${className}`}
+        border border-outline-variant flex-shrink-0 ${className}`}
     >
       {src ? (
         <img

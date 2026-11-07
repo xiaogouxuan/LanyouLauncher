@@ -33,7 +33,7 @@ export function Dropdown({
       </div>
       {open && (
         <div
-          className={`absolute top-full mt-1 z-50 bg-surface-container rounded-xl border border-outline/60 
+          className={`absolute top-full mt-1 z-50 bg-surface-container rounded-xl border border-primary/30 
             shadow-md py-1.5 min-w-[180px] animate-fade-in overflow-hidden
             ${align === "right" ? "right-0" : "left-0"} ${className}`}
         >

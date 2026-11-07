@@ -1,205 +1,102 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import { accountService } from "@/services/accountService";
-import { getCachedSkin, cacheSkin } from "@/services/skinCache";
+import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "@/i18n";
+import { drawHeadFromSkin, loadImage, loadSkinForAccount } from "@/services/skinCache";
 import type { Account } from "@/types/account";
 
 interface SkinAvatarProps {
   account: Account | null;
   size?: number;
   className?: string;
-  rounded?: "full" | "xl";
+  rounded?: "full" | "xl" | "lg" | "none";
 }
 
 /**
- * 判断默认皮肤模型：UUID 最低有效位为奇数 → Alex，否则 Steve
+ * Minecraft 风格头像：从皮肤纹理裁切脸层与帽子层，不整图缩放，避免“整张皮肤塞进头像”的穿帮。
  */
-function isSlimSkin(uuid: string): boolean {
-  try {
-    const hex = uuid.replace(/-/g, "").toLowerCase();
-    if (hex.length !== 32) return false;
-    const lsb = BigInt(`0x${hex.slice(16, 32)}`);
-    return (lsb & BigInt(1)) === BigInt(1);
-  } catch {
-    return false;
-  }
-}
-
-function getDefaultSkinUrl(account: Account): string {
-  return isSlimSkin(account.id) ? "/img/Alex.png" : "/img/Steve.png";
-}
-
-/**
- * 从皮肤纹理中绘制 Minecraft 风格头像（8x8 脸 + 8x8 帽子层）
- * 与 HMCL TexturesLoader.drawAvatar() 算法一致
- */
-function drawHeadFromSkin(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  size: number,
-) {
-  ctx.clearRect(0, 0, size, size);
-  ctx.imageSmoothingEnabled = false;
-
-  const scale = img.naturalWidth / 64;
-  const faceInset = Math.round(size / 18);
-
-  // 脸层 (8,8, 8x8)
-  ctx.drawImage(
-    img,
-    8 * scale, 8 * scale, 8 * scale, 8 * scale,
-    faceInset, faceInset,
-    size - 2 * faceInset, size - 2 * faceInset,
-  );
-
-  // 帽子层 (40,8, 8x8)
-  if (img.naturalHeight >= 64 * scale) {
-    ctx.drawImage(
-      img,
-      40 * scale, 8 * scale, 8 * scale, 8 * scale,
-      0, 0, size, size,
-    );
-  }
-}
-
-function loadImage(url: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    if (!url.startsWith("data:image/")) {
-      img.crossOrigin = "anonymous";
-    }
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("load failed"));
-    img.src = url;
-  });
-}
-
-async function loadSkinForAvatar(account: Account): Promise<HTMLImageElement | null> {
-  // 1. 本地自定义皮肤优先（base64 兜底）
-  if (account.skin_path) {
-    try {
-      const dataUrl = await accountService.readSkinDataUrl(account.skin_path);
-      return await loadImage(dataUrl);
-    } catch (err) {
-      console.warn("[SkinAvatar] base64 read failed:", err);
-    }
-  }
-
-  // 2. 离线账号使用内置默认 Steve/Alex 皮肤
-  if (account.account_type === "Offline") {
-    try {
-      return await loadImage(getDefaultSkinUrl(account));
-    } catch {
-      // 兜底继续尝试在线
-    }
-  }
-
-  // 3. 在线 API 作为备用
-  const uuid = account.id.replace(/-/g, "");
-  const urls = [
-    `https://crafatar.com/skins/${uuid}`,
-    `https://mc-heads.net/skin/${uuid}`,
-    `https://visage.surgeplay.com/skin/${uuid}`,
-  ];
-  for (const url of urls) {
-    try {
-      return await loadImage(url);
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
-}
-
 export function SkinAvatar({ account, size = 40, className = "", rounded = "xl" }: SkinAvatarProps) {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [status, setStatus] = useState<"loading" | "canvas" | "fallback">("loading");
-  const [fallbackImg, setFallbackImg] = useState<string | null>(null);
-
-  const drawHead = useCallback(
-    (skinImg: HTMLImageElement) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      if (skinImg.naturalWidth < 64 || skinImg.naturalHeight < 32) {
-        // 图片太小，直接用作 fallback img
-        setFallbackImg(skinImg.src);
-        setStatus("fallback");
-        return;
-      }
-
-      drawHeadFromSkin(ctx, skinImg, size);
-      setStatus("canvas");
-    },
-    [size],
-  );
+  const [status, setStatus] = useState<"loading" | "ready" | "fallback">("loading");
 
   useEffect(() => {
-    if (!account) {
-      setStatus("fallback");
-      setFallbackImg(getDefaultSkinUrl({ id: "00000000-0000-0000-0000-000000000000", account_type: "Offline" } as Account));
-      return;
-    }
-
-    setStatus("loading");
     let cancelled = false;
+    setStatus("loading");
 
-    const cached = getCachedSkin(account.id);
-    if (cached?.headDataUrl) {
-      const img = new Image();
-      img.onload = () => {
-        if (!cancelled) drawHead(img);
+    const render = async () => {
+      const target: Account = account ?? {
+        id: "00000000-0000-0000-0000-000000000000",
+        username: "Player",
+        account_type: "Offline",
+        avatar_url: null,
+        skin_path: null,
+        access_token: null,
+        refresh_token: null,
+        expires_at: null,
+        is_active: false,
+        auth_server: null,
       };
-      img.onerror = () => {
-        if (!cancelled) {
-          setFallbackImg(getDefaultSkinUrl(account));
+
+      try {
+        const img = await loadSkinForAccount(target);
+        if (cancelled) return;
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext("2d");
+        if (!canvas || !ctx) {
           setStatus("fallback");
+          return;
         }
-      };
-      img.src = cached.headDataUrl;
-      return;
-    }
-
-    (async () => {
-      const img = await loadSkinForAvatar(account);
-      if (cancelled) return;
-      if (!img) {
-        setFallbackImg(getDefaultSkinUrl(account));
-        setStatus("fallback");
-        return;
+        const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+        canvas.width = Math.round(size * dpr);
+        canvas.height = Math.round(size * dpr);
+        drawHeadFromSkin(ctx, img, canvas.width);
+        setStatus("ready");
+      } catch {
+        if (!cancelled) setStatus("fallback");
       }
-      cacheSkin(account.id, img);
-      drawHead(img);
-    })();
+    };
 
-    return () => { cancelled = true; };
-  }, [account, drawHead]);
+    render();
+    return () => {
+      cancelled = true;
+    };
+  }, [account, size]);
 
-  const radiusClass = rounded === "full" ? "rounded-full" : "rounded-xl";
+  const radiusClass =
+    rounded === "full"
+      ? "rounded-full"
+      : rounded === "none"
+        ? "rounded-none"
+        : rounded === "lg"
+          ? "rounded-lg"
+          : "rounded-xl";
 
   return (
     <div
       style={{ width: size, height: size }}
-      className={`relative ${radiusClass} overflow-hidden ring-2 ring-surface/80 bg-surface-container ${className}`}
+      className={`relative ${radiusClass} overflow-hidden bg-surface-container ${className}`}
     >
       <canvas
         ref={canvasRef}
         width={size}
         height={size}
-        className={`absolute inset-0 w-full h-full pixelated ${status === "canvas" ? "opacity-100" : "opacity-0"}`}
+        aria-label={String(t("account.avatarAlt"))}
+        className={`absolute inset-0 w-full h-full pixelated transition-opacity duration-150 ${
+          status === "ready" ? "opacity-100" : "opacity-0"
+        }`}
       />
-      {status !== "canvas" && fallbackImg && (
-        <img
-          src={fallbackImg}
-          alt="avatar"
-          className="absolute inset-0 w-full h-full object-cover pixelated"
-          style={{ objectPosition: `0 ${-(size * 0.15)}px`, height: "auto", minHeight: "100%" }}
-        />
-      )}
-      {status !== "canvas" && !fallbackImg && (
-        <div className="absolute inset-0 flex items-center justify-center animate-pulse bg-surface-container-high" />
+      {status !== "ready" && (
+        <div className="absolute inset-0 flex items-center justify-center bg-primary/12">
+          {status === "fallback" ? (
+            <span
+              className="font-bold text-primary"
+              style={{ fontSize: Math.max(10, size * 0.42) }}
+            >
+              {(account?.username ?? "?").slice(0, 1).toUpperCase()}
+            </span>
+          ) : (
+            <span className="block w-1/2 h-1/2 rounded-md bg-white/30 animate-pulse" />
+          )}
+        </div>
       )}
     </div>
   );

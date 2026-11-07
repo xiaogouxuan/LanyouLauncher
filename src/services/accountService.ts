@@ -14,6 +14,14 @@ export const accountService = {
     return invoke<Account>("login_microsoft", { windowTitle });
   },
 
+  async loginThirdParty(
+    authServer: string,
+    username: string,
+    password: string,
+  ): Promise<Account> {
+    return invoke<Account>("login_third_party", { authServer, username, password });
+  },
+
   async deleteAccount(id: string): Promise<void> {
     return invoke("delete_account", { id });
   },

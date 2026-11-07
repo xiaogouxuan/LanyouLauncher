@@ -7,11 +7,17 @@ export interface Task {
   type: TaskType;
   title: string;
   status: TaskStatus;
-  progress: number; // 0-100
+
+  // 任务进度百分比，取值 0-100
+  progress: number;
+
   total?: number;
   current?: number;
   message?: string;
-  speed?: number; // bytes per second
+
+  // 下载速度，单位字节每秒
+  speed?: number;
+
   stage?: string;
   createdAt: number;
   updatedAt: number;

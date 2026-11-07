@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Plus,
@@ -12,9 +12,11 @@ import {
   X,
   Eye,
   Loader,
+  RefreshCw,
+  AlertTriangle,
+  Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { SkinAvatar } from "@/components/account/SkinAvatar";
 import { SkinModel3D } from "@/components/account/SkinModel3D";
@@ -29,29 +31,29 @@ import { accountService } from "@/services/accountService";
 import { preloadSkin, invalidateCache } from "@/services/skinCache";
 import type { Account } from "@/types/account";
 
+const OFFLINE_NAME_PATTERN = /^[A-Za-z0-9_]{3,16}$/;
+
 export default function Accounts() {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const { showToast } = useToast();
   const navigate = useNavigate();
-  const { accounts, activeAccount, setActiveAccount, setAccounts } =
-    useAccountStore();
+  const { accounts, activeAccount, setActiveAccount, setAccounts } = useAccountStore();
 
   const refreshAccounts = useCallback(async () => {
     try {
       const list = await accountService.getAccounts();
       setAccounts(list);
-      const active = list.find((a) => a.is_active);
+      const active = list.find((account) => account.is_active);
       if (active) setActiveAccount(active);
     } catch (error) {
       showToast("error", String(error));
     }
   }, [setAccounts, setActiveAccount, showToast]);
 
-  // 预加载所有账号的皮肤到缓存
   useEffect(() => {
     const controller = new AbortController();
-    for (const acc of accounts) {
-      preloadSkin(acc, controller.signal);
+    for (const account of accounts) {
+      preloadSkin(account, controller.signal);
     }
     return () => controller.abort();
   }, [accounts]);
@@ -59,19 +61,51 @@ export default function Accounts() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showOfflineModal, setShowOfflineModal] = useState(false);
   const [showMicrosoftModal, setShowMicrosoftModal] = useState(false);
+  const [showThirdPartyModal, setShowThirdPartyModal] = useState(false);
   const [offlineUsername, setOfflineUsername] = useState("");
+  const [usernameError, setUsernameError] = useState("");
+  const [thirdPartyServer, setThirdPartyServer] = useState("https://littleskin.cn/api/yggdrasil");
+  const [thirdPartyUsername, setThirdPartyUsername] = useState("");
+  const [thirdPartyPassword, setThirdPartyPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [msLoginStep, setMsLoginStep] = useState(0);
   const [selectingSkin, setSelectingSkin] = useState(false);
+  const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Account | null>(null);
+
+  const isTokenExpired = useCallback((account: Account) => {
+    if (account.account_type !== "Microsoft") return false;
+    if (!account.expires_at) return false;
+    return account.expires_at * 1000 <= Date.now();
+  }, []);
+
+  const formatExpiry = useCallback(
+    (account: Account) => {
+      if (!account.expires_at) return t("account.expiresUnknown");
+      const date = new Date(account.expires_at * 1000).toLocaleDateString(language, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      return t("account.tokenValidUntil", { date });
+    },
+    [language, t]
+  );
 
   const handleOfflineLogin = async () => {
-    if (!offlineUsername.trim()) {
-      showToast("error", t("account.enterUsername"));
+    const username = offlineUsername.trim();
+    if (!username) {
+      setUsernameError(t("account.enterUsername"));
       return;
     }
+    if (!OFFLINE_NAME_PATTERN.test(username)) {
+      setUsernameError(t("account.usernameInvalid"));
+      return;
+    }
+    setUsernameError("");
     setIsLoading(true);
     try {
-      await accountService.loginOffline(offlineUsername.trim());
+      await accountService.loginOffline(username);
       await refreshAccounts();
       setOfflineUsername("");
       setShowOfflineModal(false);
@@ -104,6 +138,27 @@ export default function Accounts() {
     }
   };
 
+  const handleThirdPartyLogin = async () => {
+    setIsLoading(true);
+    try {
+      await accountService.loginThirdParty(
+        thirdPartyServer,
+        thirdPartyUsername.trim(),
+        thirdPartyPassword,
+      );
+      await refreshAccounts();
+      setThirdPartyUsername("");
+      setThirdPartyPassword("");
+      setShowThirdPartyModal(false);
+      setShowAddModal(false);
+      showToast("success", t("account.loginSuccess"));
+    } catch (error) {
+      showToast("error", String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSwitchAccount = async (account: Account) => {
     try {
       await accountService.switchAccount(account.id);
@@ -114,11 +169,26 @@ export default function Accounts() {
     }
   };
 
-  const handleDeleteAccount = async (account: Account) => {
+  const handleRefreshToken = async (account: Account) => {
+    setRefreshingId(account.id);
     try {
-      await accountService.deleteAccount(account.id);
+      await accountService.refreshToken(account.id);
+      await refreshAccounts();
+      showToast("success", t("account.tokenRefreshed"));
+    } catch (error) {
+      showToast("error", String(error));
+    } finally {
+      setRefreshingId(null);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!pendingDelete) return;
+    try {
+      await accountService.deleteAccount(pendingDelete.id);
       await refreshAccounts();
       showToast("success", t("account.deleteSuccess"));
+      setPendingDelete(null);
     } catch (error) {
       showToast("error", String(error));
     }
@@ -157,143 +227,222 @@ export default function Accounts() {
     navigate(`/skin-preview?id=${account.id}`);
   };
 
-  const otherAccounts = accounts.filter((a) => a.id !== activeAccount?.id);
+  const otherAccounts = useMemo(
+    () => accounts.filter((account) => account.id !== activeAccount?.id),
+    [accounts, activeAccount]
+  );
+
+  const accountTypeLabel = (account: Account) =>
+    account.account_type === "Microsoft"
+      ? t("account.microsoft")
+      : account.account_type === "ThirdParty"
+        ? t("account.thirdParty")
+        : t("account.offline");
+
+  const accountBadges = (account: Account) => (
+    <>
+      <Badge
+        variant={
+          account.account_type === "Microsoft"
+            ? "success"
+            : account.account_type === "ThirdParty"
+              ? "info"
+              : "default"
+        }
+      >
+        {accountTypeLabel(account)}
+      </Badge>
+      {isTokenExpired(account) && <Badge variant="danger">{t("account.tokenExpiredBadge")}</Badge>}
+    </>
+  );
 
   return (
     <PageTransition>
-      <div className="p-6 space-y-4 h-full flex flex-col">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-on-surface">{t("account.title")}</h1>
+      <div className="p-5 h-full flex flex-col">
+        <header className="flex items-center justify-between mb-4 pb-3 border-b border-outline-variant shrink-0">
+          <div>
+            <h1 className="wallpaper-text text-[18px] font-semibold tracking-tight">{t("account.title")}</h1>
+          </div>
           <Button size="sm" onClick={() => setShowAddModal(true)}>
-            <Plus size={16} />
+            <Plus size={15} />
             {t("account.addAccount")}
           </Button>
-        </div>
+        </header>
 
         {accounts.length === 0 ? (
-          <EmptyState
-            icon={<User size={48} className="text-on-surface-variant" />}
-            title={t("account.emptyTitle")}
-            description={t("account.addAccountToStart")}
-          />
+          <div className="flex-1 flex items-center justify-center">
+            <EmptyState
+              icon={<User size={44} className="text-on-surface-variant" />}
+              title={t("account.emptyTitle")}
+              description={t("account.addAccountToStart")}
+              action={
+                <Button onClick={() => setShowAddModal(true)}>
+                  <Plus size={15} />
+                  {t("account.addAccount")}
+                </Button>
+              }
+            />
+          </div>
         ) : (
-          <div className="space-y-4 overflow-y-auto pr-1">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-0.5">
             {activeAccount && (
-              <Card className="p-5 border-primary/30 bg-primary-container/20">
-                <div className="flex items-center gap-4">
+              <section className="rounded-card border border-outline-variant bg-surface-high p-4 shadow-card">
+                <div className="flex items-start gap-5">
                   <button
                     type="button"
                     onClick={() => openSkinPreview(activeAccount)}
-                    className="flex-shrink-0 hover:opacity-80 transition-opacity"
+                    className="flex-shrink-0 hover:opacity-85 transition-opacity rounded-[4px]"
                     title={t("account.viewSkinPreview")}
                   >
-                    <SkinAvatar account={activeAccount} size={72} />
+                    <SkinAvatar account={activeAccount} size={58} />
                   </button>
+
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-lg font-semibold text-on-surface">
+                      <span className="text-[17px] font-semibold text-on-surface">
                         {activeAccount.username}
                       </span>
-                      <Badge
-                        variant={
-                          activeAccount.account_type === "Microsoft" ? "success" : "default"
-                        }
-                      >
-                        {activeAccount.account_type === "Microsoft"
-                          ? t("account.microsoft")
-                          : t("account.offline")}
-                      </Badge>
-                      <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-secondary-container text-on-secondary-container">
-                        <Check size={12} className="mr-1" />
+                      {accountBadges(activeAccount)}
+                      <span className="inline-flex items-center gap-1 h-[18px] px-1.5 text-[11px] font-medium rounded-[3px] bg-primary/8 text-primary border border-primary/25">
+                        <Check size={11} />
                         {t("account.current")}
                       </span>
                     </div>
-                    <p className="text-sm text-on-surface-variant mt-1 truncate">
+
+                    <p className="text-[12px] text-on-surface-variant mt-1.5">
                       {activeAccount.account_type === "Microsoft"
-                        ? t("account.currentAccount")
-                        : t("account.offlineDesc")}
+                        ? formatExpiry(activeAccount)
+                        : activeAccount.account_type === "ThirdParty"
+                          ? t("account.thirdPartyServer", {
+                              server: activeAccount.auth_server ?? "",
+                            })
+                          : t("account.offlineDesc")}
                     </p>
-                    <p className="text-xs text-on-surface-variant/70 mt-1 font-mono truncate">
-                      ID: {activeAccount.id}
+                    <p className="text-[11px] text-on-surface-subtle mt-1 font-mono truncate">
+                      {t("account.idLabel")}: {activeAccount.id}
                     </p>
-                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+
+                    <div className="flex items-center gap-2 mt-3.5 flex-wrap">
                       {activeAccount.account_type === "Offline" && (
                         <>
                           <Button
                             size="sm"
                             variant="tonal"
+                            className="shrink-0 whitespace-nowrap"
                             onClick={() => handleSelectSkin(activeAccount)}
                             loading={selectingSkin}
                             disabled={selectingSkin}
                           >
-                            <Image size={14} className="mr-1" />
-                            {activeAccount.skin_path ? t("account.changeSkin") : t("account.selectSkin")}
+                            <Image size={14} />
+                            <span className="whitespace-nowrap">
+                              {activeAccount.skin_path
+                                ? t("account.changeSkin")
+                                : t("account.selectSkin")}
+                            </span>
                           </Button>
                           {activeAccount.skin_path && (
                             <Button
                               size="sm"
                               variant="outlined"
+                              className="shrink-0 whitespace-nowrap"
                               onClick={() => handleClearSkin(activeAccount)}
                               disabled={selectingSkin}
                             >
-                              <X size={14} className="mr-1" />
-                              {t("account.clearSkin")}
+                              <X size={14} />
+                              <span className="whitespace-nowrap">{t("account.clearSkin")}</span>
                             </Button>
                           )}
                         </>
                       )}
+                      {activeAccount.account_type === "Microsoft" && (
+                        <Button
+                          size="sm"
+                          variant="tonal"
+                          className="shrink-0 whitespace-nowrap"
+                          onClick={() => handleRefreshToken(activeAccount)}
+                          loading={refreshingId === activeAccount.id}
+                          disabled={refreshingId === activeAccount.id}
+                        >
+                          <RefreshCw size={14} />
+                          <span className="whitespace-nowrap">{t("account.refreshToken")}</span>
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="text"
+                        className="shrink-0 whitespace-nowrap"
                         onClick={() => openSkinPreview(activeAccount)}
                       >
-                        <Eye size={14} className="mr-1" />
-                        {t("account.viewSkinPreview")}
+                        <Eye size={14} />
+                        <span className="whitespace-nowrap">{t("account.viewSkinPreview")}</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="text"
+                        className="shrink-0 whitespace-nowrap text-danger hover:bg-danger-container hover:text-danger"
+                        onClick={() => setPendingDelete(activeAccount)}
+                      >
+                        <Trash2 size={14} />
+                        <span className="whitespace-nowrap">{t("account.deleteAccount")}</span>
                       </Button>
                     </div>
                   </div>
-                  <SkinModel3D account={activeAccount} size={80} className="hidden sm:flex" />
+
+                  <button
+                    type="button"
+                    onClick={() => openSkinPreview(activeAccount)}
+                    className="hidden sm:block flex-shrink-0 rounded-card overflow-hidden ring-1 ring-outline-variant hover:ring-primary/40 transition-colors"
+                    title={t("account.viewSkinPreview")}
+                  >
+                    <SkinModel3D account={activeAccount} size={132} />
+                  </button>
                 </div>
-              </Card>
+              </section>
             )}
 
             {otherAccounts.length > 0 && (
-              <div className="space-y-2">
+              <section className="rounded-card border border-outline-variant bg-surface-high overflow-hidden">
                 {otherAccounts.map((account) => (
-                  <Card
+                  <div
                     key={account.id}
-                    className="flex items-center justify-between p-3 hover:bg-surface-container-high transition-colors"
+                    className="flex items-center gap-3 px-4 py-3 border-b border-outline-variant last:border-b-0 hover:bg-surface-hover/50 transition-colors"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <button
-                        type="button"
-                        onClick={() => openSkinPreview(account)}
-                        className="flex-shrink-0 hover:opacity-80 transition-opacity"
-                        title={t("account.viewSkinPreview")}
-                      >
-                        <SkinAvatar account={account} size={40} />
-                      </button>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-on-surface truncate">
-                            {account.username}
-                          </span>
-                          <Badge
-                            variant={
-                              account.account_type === "Microsoft" ? "success" : "default"
-                            }
-                          >
-                            {account.account_type === "Microsoft"
-                              ? t("account.microsoft")
-                              : t("account.offline")}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-on-surface-variant font-mono truncate">
-                          {account.id}
-                        </p>
+                    <button
+                      type="button"
+                      onClick={() => openSkinPreview(account)}
+                      className="flex-shrink-0 hover:opacity-85 transition-opacity"
+                      title={t("account.viewSkinPreview")}
+                    >
+                      <SkinAvatar account={account} size={34} />
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[13px] font-medium text-on-surface truncate">
+                          {account.username}
+                        </span>
+                        {accountBadges(account)}
                       </div>
+                      <p className="text-[11px] text-on-surface-subtle font-mono truncate mt-0.5">
+                        {account.account_type === "Microsoft"
+                          ? formatExpiry(account)
+                          : account.account_type === "ThirdParty"
+                            ? account.auth_server ?? account.id
+                            : account.id}
+                      </p>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
+                      {account.account_type === "Microsoft" && (
+                        <Button
+                          variant="text"
+                          size="sm"
+                          onClick={() => handleRefreshToken(account)}
+                          loading={refreshingId === account.id}
+                          disabled={refreshingId === account.id}
+                          title={t("account.refreshToken")}
+                        >
+                          <RefreshCw size={15} />
+                        </Button>
+                      )}
                       {account.account_type === "Offline" && (
                         <Button
                           variant="text"
@@ -301,9 +450,11 @@ export default function Accounts() {
                           onClick={() => handleSelectSkin(account)}
                           loading={selectingSkin}
                           disabled={selectingSkin}
-                          title={account.skin_path ? t("account.changeSkin") : t("account.selectSkin")}
+                          title={
+                            account.skin_path ? t("account.changeSkin") : t("account.selectSkin")
+                          }
                         >
-                          <Image size={16} />
+                          <Image size={15} />
                         </Button>
                       )}
                       <Button
@@ -312,10 +463,10 @@ export default function Accounts() {
                         onClick={() => openSkinPreview(account)}
                         title={t("account.viewSkinPreview")}
                       >
-                        <Eye size={16} />
+                        <Eye size={15} />
                       </Button>
                       <Button
-                        variant="text"
+                        variant="tonal"
                         size="sm"
                         onClick={() => handleSwitchAccount(account)}
                       >
@@ -324,26 +475,29 @@ export default function Accounts() {
                       <Button
                         variant="text"
                         size="sm"
-                        onClick={() => handleDeleteAccount(account)}
+                        className="text-danger hover:bg-danger-container hover:text-danger"
+                        onClick={() => setPendingDelete(account)}
+                        title={t("account.deleteAccount")}
                       >
-                        <Trash2 size={16} />
+                        <Trash2 size={15} />
                       </Button>
                     </div>
-                  </Card>
+                  </div>
                 ))}
-              </div>
+              </section>
             )}
           </div>
         )}
 
-        {/* 添加账号弹窗 */}
         <Modal
           open={showAddModal}
           onClose={() => !isLoading && setShowAddModal(false)}
           title={t("account.addAccountTitle")}
         >
-          <div className="space-y-3">
-            <p className="text-sm text-on-surface-variant">{t("account.selectLoginType")}</p>
+          <div className="space-y-2.5">
+            <p className="text-[12px] text-on-surface-variant mb-1">
+              {t("account.selectLoginType")}
+            </p>
             <button
               type="button"
               onClick={() => {
@@ -351,18 +505,18 @@ export default function Accounts() {
                 setShowMicrosoftModal(true);
               }}
               disabled={isLoading}
-              className="w-full flex items-center gap-4 p-4 rounded-2xl bg-surface-container hover:bg-surface-container-high transition-colors text-left disabled:opacity-50"
+              className="w-full flex items-center gap-3 p-3.5 rounded-card bg-surface-container border border-outline-variant hover:bg-surface-hover transition-colors text-left disabled:opacity-50"
             >
-              <div className="h-12 w-12 rounded-xl bg-success-container flex items-center justify-center flex-shrink-0">
-                <Shield size={24} className="text-on-success-container" />
+              <div className="h-10 w-10 rounded-btn bg-success-container flex items-center justify-center flex-shrink-0">
+                <Shield size={20} className="text-success" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-on-surface">{t("account.microsoft")}</p>
-                <p className="text-sm text-on-surface-variant truncate">
+                <p className="text-[13px] font-medium text-on-surface">{t("account.microsoft")}</p>
+                <p className="text-[12px] text-on-surface-variant truncate">
                   {t("account.microsoftDesc")}
                 </p>
               </div>
-              <ChevronRight size={18} className="text-on-surface-variant flex-shrink-0" />
+              <ChevronRight size={16} className="text-on-surface-subtle flex-shrink-0" />
             </button>
 
             <button
@@ -372,23 +526,43 @@ export default function Accounts() {
                 setShowOfflineModal(true);
               }}
               disabled={isLoading}
-              className="w-full flex items-center gap-4 p-4 rounded-2xl bg-surface-container hover:bg-surface-container-high transition-colors text-left disabled:opacity-50"
+              className="w-full flex items-center gap-3 p-3.5 rounded-card bg-surface-container border border-outline-variant hover:bg-surface-hover transition-colors text-left disabled:opacity-50"
             >
-              <div className="h-12 w-12 rounded-xl bg-surface-container-high border border-outline-variant flex items-center justify-center flex-shrink-0">
-                <Monitor size={24} className="text-on-surface-variant" />
+              <div className="h-10 w-10 rounded-btn bg-surface-hover border border-outline-variant flex items-center justify-center flex-shrink-0">
+                <Monitor size={20} className="text-on-surface-variant" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-on-surface">{t("account.offline")}</p>
-                <p className="text-sm text-on-surface-variant truncate">
+                <p className="text-[13px] font-medium text-on-surface">{t("account.offline")}</p>
+                <p className="text-[12px] text-on-surface-variant truncate">
                   {t("account.offlineDesc")}
                 </p>
               </div>
-              <ChevronRight size={18} className="text-on-surface-variant flex-shrink-0" />
+              <ChevronRight size={16} className="text-on-surface-subtle flex-shrink-0" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowAddModal(false);
+                setShowThirdPartyModal(true);
+              }}
+              disabled={isLoading}
+              className="w-full flex items-center gap-3 p-3.5 rounded-card bg-surface-container border border-outline-variant hover:bg-surface-hover transition-colors text-left disabled:opacity-50"
+            >
+              <div className="h-10 w-10 rounded-[4px] bg-primary/8 flex items-center justify-center flex-shrink-0">
+                <Globe size={20} className="text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-medium text-on-surface">{t("account.thirdParty")}</p>
+                <p className="text-[12px] text-on-surface-variant truncate">
+                  {t("account.thirdPartyDesc")}
+                </p>
+              </div>
+              <ChevronRight size={16} className="text-on-surface-subtle flex-shrink-0" />
             </button>
           </div>
         </Modal>
 
-        {/* 离线登录弹窗 */}
         <Modal
           open={showOfflineModal}
           onClose={() => !isLoading && setShowOfflineModal(false)}
@@ -399,11 +573,18 @@ export default function Accounts() {
               label={t("account.username")}
               placeholder={t("account.usernamePlaceholder")}
               value={offlineUsername}
-              onChange={(e) => setOfflineUsername(e.target.value)}
+              error={usernameError}
+              onChange={(e) => {
+                setOfflineUsername(e.target.value);
+                if (usernameError) setUsernameError("");
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleOfflineLogin();
               }}
             />
+            <p className="text-[11px] text-on-surface-subtle">
+              {usernameError ? t("account.usernameInvalid") : t("account.offlineDesc")}
+            </p>
             <div className="flex justify-end gap-2">
               <Button
                 variant="text"
@@ -419,30 +600,76 @@ export default function Accounts() {
           </div>
         </Modal>
 
-        {/* 微软登录弹窗（重新设计，参考 HMCL） */}
+        <Modal
+          open={showThirdPartyModal}
+          onClose={() => !isLoading && setShowThirdPartyModal(false)}
+          title={t("account.thirdParty")}
+        >
+          <div className="space-y-4">
+            <Input
+              label={t("account.authServer")}
+              placeholder={t("account.authServerPlaceholder")}
+              value={thirdPartyServer}
+              onChange={(e) => setThirdPartyServer(e.target.value)}
+            />
+            <Input
+              label={t("account.username")}
+              value={thirdPartyUsername}
+              onChange={(e) => setThirdPartyUsername(e.target.value)}
+            />
+            <Input
+              label={t("account.password")}
+              type="password"
+              value={thirdPartyPassword}
+              onChange={(e) => setThirdPartyPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleThirdPartyLogin();
+              }}
+            />
+            <p className="text-[11px] text-on-surface-subtle leading-relaxed">
+              {t("account.thirdPartyHint")}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="text"
+                onClick={() => setShowThirdPartyModal(false)}
+                disabled={isLoading}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                onClick={handleThirdPartyLogin}
+                loading={isLoading}
+                disabled={!thirdPartyServer.trim() || !thirdPartyUsername.trim() || !thirdPartyPassword}
+              >
+                {t("account.loginThirdParty")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
         <Modal
           open={showMicrosoftModal}
           onClose={() => !isLoading && setShowMicrosoftModal(false)}
           title={t("account.microsoft")}
         >
           <div className="space-y-4">
-            {/* 步骤指示器 */}
             <div className="flex items-center gap-2">
               {[1, 2, 3].map((step) => (
                 <div key={step} className="flex items-center gap-2">
                   <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-medium transition-colors ${
                       msLoginStep >= step
                         ? "bg-primary text-on-primary"
-                        : "bg-surface-container text-on-surface-variant"
+                        : "bg-surface-hover text-on-surface-subtle"
                     }`}
                   >
-                    {msLoginStep > step ? <Check size={16} /> : step}
+                    {msLoginStep > step ? <Check size={14} /> : step}
                   </div>
                   {step < 3 && (
                     <div
-                      className={`w-6 h-0.5 transition-colors ${
-                        msLoginStep > step ? "bg-primary" : "bg-surface-container"
+                      className={`w-8 h-px transition-colors ${
+                        msLoginStep > step ? "bg-primary" : "bg-outline-variant"
                       }`}
                     />
                   )}
@@ -450,23 +677,24 @@ export default function Accounts() {
               ))}
             </div>
 
-            {/* 状态说明 */}
-            <div className="flex items-start gap-3 p-4 rounded-2xl bg-surface-container">
+            <div className="flex items-start gap-3 p-3.5 rounded-card bg-surface-container border border-outline-variant">
               {msLoginStep === 0 ? (
-                <Shield size={24} className="text-success mt-0.5 flex-shrink-0" />
+                <Shield size={20} className="text-success mt-0.5 flex-shrink-0" />
               ) : (
-                <Loader size={24} className="text-primary mt-0.5 flex-shrink-0 animate-spin" />
+                <Loader size={20} className="text-primary mt-0.5 flex-shrink-0 animate-spin" />
               )}
               <div>
-                <p className="text-sm font-medium text-on-surface">
+                <p className="text-[13px] font-medium text-on-surface">
                   {msLoginStep === 0 && t("account.microsoft")}
                   {msLoginStep === 1 && t("account.microsoftStep1")}
                   {msLoginStep === 2 && t("account.microsoftStep2")}
                   {msLoginStep === 3 && t("account.microsoftStep3")}
                 </p>
-                <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
-                  {msLoginStep === 0 && t("account.microsoftOAuthDetail")}
-                </p>
+                {msLoginStep === 0 && (
+                  <p className="text-[11px] text-on-surface-variant mt-1 leading-relaxed">
+                    {t("account.microsoftOAuthDetail")}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -478,12 +706,36 @@ export default function Accounts() {
               >
                 {t("common.cancel")}
               </Button>
-              <Button
-                onClick={handleMicrosoftLogin}
-                loading={isLoading}
-                disabled={msLoginStep > 0}
-              >
+              <Button onClick={handleMicrosoftLogin} loading={isLoading} disabled={msLoginStep > 0}>
                 {t("account.loginMicrosoft")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        <Modal
+          open={pendingDelete !== null}
+          onClose={() => setPendingDelete(null)}
+          title={t("account.deleteAccount")}
+        >
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 p-3.5 rounded-card bg-danger-container border border-danger-border">
+              <AlertTriangle size={18} className="text-danger mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-[13px] font-medium text-on-surface">
+                  {pendingDelete?.username}
+                </p>
+                <p className="text-[12px] text-on-surface-variant mt-0.5 leading-relaxed">
+                  {t("account.deleteConfirmDetail")}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="text" onClick={() => setPendingDelete(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button variant="danger" onClick={handleDeleteAccount}>
+                {t("common.delete")}
               </Button>
             </div>
           </div>

@@ -2,159 +2,213 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ===== Material Design 3 Expressive 主题 CSS 变量 ===== */
+/*
+ * 设计系统沿用 PCL2 与 HMCL 的桌面软件语言：
+ * 圆角很小（按钮 3-4px、卡片 6px），不使用大圆角；
+ * 层级依靠 1px 描边、明度差和分割线，不使用渐变与发光；
+ * 列表行高 40-44px，页面内边距 16-20px，字号以 12/13/18 为主；
+ * 选中态为浅色底加强调色文字，并在左侧加 2px 色条；
+ * hover 只叠加极浅遮罩，不做位移、缩放和阴影变化。
+ */
+
 :root {
-  /* 主题种子色：默认蓝色，可被用户自定义覆盖 */
-  --theme-color: #3B82F6;
-  --theme-color-rgb: 59, 130, 246;
+  /* 浅色：接近 PCL 的 #fbfbfb 与 HMCL 的 #FBF8FF，冷白但极淡 */
+  --bg-base-rgb: 245 246 249;
+  --bg-panel-rgb: 252 252 253;
+  --bg-card-rgb: 255 255 255;
+  --bg-elevated-rgb: 255 255 255;
+  --bg-inset-rgb: 239 241 245;
+  --bg-hover-rgb: 238 241 246;
+  --bg-active-rgb: 231 235 242;
 
-  /* MD3 Expressive 颜色 Token（默认浅色） */
-  --md-sys-color-primary: #3B82F6;
-  --md-sys-color-on-primary: #ffffff;
-  --md-sys-color-primary-container: #d8e6ff;
-  --md-sys-color-on-primary-container: #001d3d;
-  --md-sys-color-secondary: #5c5f66;
-  --md-sys-color-on-secondary: #ffffff;
-  --md-sys-color-secondary-container: #e1e2e8;
-  --md-sys-color-on-secondary-container: #1a1c22;
-  --md-sys-color-tertiary: #7c5790;
-  --md-sys-color-on-tertiary: #ffffff;
-  --md-sys-color-tertiary-container: #f5d9ff;
-  --md-sys-color-on-tertiary-container: #2e0e41;
-  --md-sys-color-error: #ba1a1a;
+  --border-rgb: 226 229 236;
+  --border-strong-rgb: 203 209 219;
+
+  --fg-rgb: 43 49 60;
+  --fg-muted-rgb: 108 116 131;
+  --fg-subtle-rgb: 145 152 165;
+
+  /* PCL 的强调蓝 ColorBrush3 */
+  --accent-rgb: 19 112 243;
+  --accent-color: #1370f3;
+  --on-accent-rgb: 255 255 255;
+
+  --danger-rgb: 224 68 66;
+  --success-rgb: 42 163 106;
+  --warning-rgb: 224 141 40;
+
+  --violet-rgb: 108 99 220;
+  --cyan-rgb: 32 148 186;
+  --pink-rgb: 208 84 126;
+  --amber-rgb: 214 140 38;
+  --mint-rgb: 40 158 110;
+  --sky-rgb: 44 146 226;
+
+  --scrim-rgb: 18 22 30;
+  --scrim-opacity: 0.38;
+
+  --radius-card: 10px;
+  --radius-btn: 8px;
+  --radius-input: 8px;
+  --radius-window: 8px;
+
+  --shadow-card: 0 1px 2px rgba(20, 28, 45, 0.05);
+  --shadow-elevated: 0 10px 26px -14px rgba(20, 28, 45, 0.24);
+  --shadow-dialog: 0 24px 56px -22px rgba(20, 28, 45, 0.32);
+
+  /* 保留变量名兼容旧页面，但一律输出纯色，不再出渐变 */
+  --grad-brand: linear-gradient(180deg, var(--accent-color) 0%, var(--accent-color) 100%);
+  --grad-hero: linear-gradient(180deg, var(--accent-color) 0%, var(--accent-color) 100%);
+  --grad-soft: linear-gradient(180deg, rgb(var(--accent-rgb) / 0.07) 0%, rgb(var(--accent-rgb) / 0.04) 100%);
+
+  /* 旧变量兼容别名 */
+  --theme-color: var(--accent-color);
+  --theme-color-rgb: var(--accent-rgb);
+  --accent: rgb(var(--accent-rgb));
+  --accent-hover: color-mix(in srgb, var(--accent-color) 88%, white);
+  --accent-soft: color-mix(in srgb, var(--accent-color) 10%, transparent);
+  --accent-muted: color-mix(in srgb, var(--accent-color) 6%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent-color) 32%, transparent);
+
+  --md-sys-color-primary: rgb(var(--accent-rgb));
+  --md-sys-color-on-primary: rgb(var(--on-accent-rgb));
+  --md-sys-color-primary-container: var(--accent-soft);
+  --md-sys-color-on-primary-container: var(--accent-color);
+  --md-sys-color-secondary: rgb(var(--fg-muted-rgb));
+  --md-sys-color-on-secondary: rgb(var(--bg-card-rgb));
+  --md-sys-color-secondary-container: rgb(var(--bg-hover-rgb));
+  --md-sys-color-on-secondary-container: rgb(var(--fg-rgb));
+  --md-sys-color-tertiary: rgb(var(--warning-rgb));
+  --md-sys-color-on-tertiary: rgb(var(--bg-card-rgb));
+  --md-sys-color-tertiary-container: rgb(var(--warning-rgb) / 0.12);
+  --md-sys-color-on-tertiary-container: rgb(var(--warning-rgb));
+  --md-sys-color-error: rgb(var(--danger-rgb));
   --md-sys-color-on-error: #ffffff;
-  --md-sys-color-error-container: #ffdad6;
-  --md-sys-color-on-error-container: #410002;
-  --md-sys-color-surface: #faf9fd;
-  --md-sys-color-on-surface: #1b1b1f;
-  --md-sys-color-surface-variant: #e3e1ec;
-  --md-sys-color-on-surface-variant: #46464f;
-  --md-sys-color-surface-container-lowest: #ffffff;
-  --md-sys-color-surface-container-low: #f5f4f9;
-  --md-sys-color-surface-container: #efedf4;
-  --md-sys-color-surface-container-high: #e9e7ee;
-  --md-sys-color-surface-container-highest: #e3e1e8;
-  --md-sys-color-outline: #777680;
-  --md-sys-color-outline-variant: #c7c5d0;
-  --md-sys-color-inverse-surface: #303034;
-  --md-sys-color-inverse-on-surface: #f2f0f5;
-  --md-sys-color-inverse-primary: #a8c7ff;
-  --md-sys-color-scrim: rgba(0, 0, 0, 0.32);
-  --md-sys-color-shadow: rgba(0, 0, 0, 0.2);
+  --md-sys-color-error-container: rgb(var(--danger-rgb) / 0.12);
+  --md-sys-color-on-error-container: rgb(var(--danger-rgb));
+  --md-sys-color-surface: rgb(var(--bg-base-rgb));
+  --md-sys-color-on-surface: rgb(var(--fg-rgb));
+  --md-sys-color-surface-variant: rgb(var(--bg-elevated-rgb));
+  --md-sys-color-on-surface-variant: rgb(var(--fg-muted-rgb));
+  --md-sys-color-surface-container-lowest: rgb(var(--bg-inset-rgb));
+  --md-sys-color-surface-container-low: rgb(var(--bg-inset-rgb));
+  --md-sys-color-surface-container: rgb(var(--bg-panel-rgb));
+  /* 标题栏与侧栏整体着色：主题色的浅一档，随主题切换 */
+  --shell-surface: color-mix(in srgb, rgb(var(--accent-rgb)) 35%, rgb(var(--bg-panel-rgb)));
+  --md-sys-color-surface-container-high: rgb(var(--bg-card-rgb));
+  --md-sys-color-surface-container-highest: rgb(var(--bg-elevated-rgb));
+  --md-sys-color-outline: var(--border-color-strong);
+  --md-sys-color-outline-variant: var(--border-color-variant);
+  --border-color-strong: rgb(var(--border-strong-rgb));
+  --border-color-variant: rgb(var(--border-rgb));
+  --md-sys-color-inverse-surface: rgb(var(--fg-rgb));
+  --md-sys-color-inverse-on-surface: rgb(var(--bg-card-rgb));
+  --md-sys-color-inverse-primary: rgb(var(--accent-rgb));
+  --md-sys-color-scrim: rgba(var(--scrim-rgb), var(--scrim-opacity));
+  --md-sys-color-shadow: rgba(16, 18, 22, 0.2);
 
-  /* 兼容旧变量：映射到 MD3 Token */
-  --color-bg-primary: var(--md-sys-color-surface);
-  --color-bg-secondary: var(--md-sys-color-surface-container);
-  --color-bg-card: var(--md-sys-color-surface-container-high);
-  --color-text-primary: var(--md-sys-color-on-surface);
-  --color-text-secondary: var(--md-sys-color-on-surface-variant);
-  --color-border: var(--md-sys-color-outline-variant);
-  --color-accent: var(--md-sys-color-primary);
-  --color-accent-hover: var(--md-sys-color-primary);
-  --color-glass-bg: color-mix(in srgb, var(--md-sys-color-surface-container) 72%, transparent);
-  --shadow-card: 0 1px 2px 0 rgba(0, 0, 0, 0.05), 0 1px 3px 1px rgba(0, 0, 0, 0.1);
-  --shadow-elevated: 0 4px 8px 3px rgba(0, 0, 0, 0.07), 0 1px 3px 0 rgba(0, 0, 0, 0.05);
-  --shadow-glow: 0 0 20px rgba(var(--theme-color-rgb), 0.25);
+  --color-bg-primary: rgb(var(--bg-base-rgb));
+  --color-bg-secondary: rgb(var(--bg-panel-rgb));
+  --color-bg-card: rgb(var(--bg-card-rgb));
+  --color-text-primary: rgb(var(--fg-rgb));
+  --color-text-secondary: rgb(var(--fg-muted-rgb));
+  --color-border: rgb(var(--border-rgb));
+  --color-accent: rgb(var(--accent-rgb));
+  --color-accent-hover: var(--accent-hover);
+  --color-glass-bg: rgba(var(--bg-card-rgb), 0.72);
 
-  /* MD3 Expressive 形状 Token */
-  --md-sys-shape-corner-none: 0px;
-  --md-sys-shape-corner-extra-small: 4px;
-  --md-sys-shape-corner-small: 8px;
-  --md-sys-shape-corner-medium: 12px;
-  --md-sys-shape-corner-large: 20px;
-  --md-sys-shape-corner-extra-large: 28px;
-  --md-sys-shape-corner-full: 9999px;
-
-  --radius-card: var(--md-sys-shape-corner-large);
-  --radius-btn: var(--md-sys-shape-corner-medium);
-  --radius-input: var(--md-sys-shape-corner-small);
-  --radius-window: 14px;
-
-  /* MD3 Elevation */
-  --md-sys-elevation-level0: none;
-  --md-sys-elevation-level1: 0 1px 2px 0 rgba(0, 0, 0, 0.05), 0 1px 3px 1px rgba(0, 0, 0, 0.1);
-  --md-sys-elevation-level2: 0 1px 2px 0 rgba(0, 0, 0, 0.05), 0 2px 6px 2px rgba(0, 0, 0, 0.1);
-  --md-sys-elevation-level3: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 4px 8px 3px rgba(0, 0, 0, 0.07);
-  --md-sys-elevation-level4: 0 2px 3px 0 rgba(0, 0, 0, 0.05), 0 6px 10px 4px rgba(0, 0, 0, 0.08);
-  --md-sys-elevation-level5: 0 4px 4px 0 rgba(0, 0, 0, 0.05), 0 8px 12px 6px rgba(0, 0, 0, 0.1);
+  --background-image: none;
+  --background-solid: transparent;
+  --background-opacity: 1;
+  --background-blur: 0px;
 }
 
-/* ===== 深色主题 ===== */
 .dark {
-  --md-sys-color-primary: #a8c7ff;
-  --md-sys-color-on-primary: #002f66;
-  --md-sys-color-primary-container: #004590;
-  --md-sys-color-on-primary-container: #d8e6ff;
-  --md-sys-color-secondary: #c5c6d0;
-  --md-sys-color-on-secondary: #2e3036;
-  --md-sys-color-secondary-container: #44474e;
-  --md-sys-color-on-secondary-container: #e1e2e8;
-  --md-sys-color-tertiary: #dfb8f0;
-  --md-sys-color-on-tertiary: #452259;
-  --md-sys-color-tertiary-container: #5d3b71;
-  --md-sys-color-on-tertiary-container: #f5d9ff;
-  --md-sys-color-error: #ffb4ab;
-  --md-sys-color-on-error: #690005;
-  --md-sys-color-error-container: #93000a;
-  --md-sys-color-on-error-container: #ffdad6;
-  --md-sys-color-surface: #131316;
-  --md-sys-color-on-surface: #e4e2e6;
-  --md-sys-color-surface-variant: #46464f;
-  --md-sys-color-on-surface-variant: #c7c5d0;
-  --md-sys-color-surface-container-lowest: #0f0f12;
-  --md-sys-color-surface-container-low: #1b1b1f;
-  --md-sys-color-surface-container: #1f1f23;
-  --md-sys-color-surface-container-high: #29292d;
-  --md-sys-color-surface-container-highest: #343438;
-  --md-sys-color-outline: #8f909a;
-  --md-sys-color-outline-variant: #46464f;
-  --md-sys-color-inverse-surface: #e4e2e6;
-  --md-sys-color-inverse-on-surface: #303034;
-  --md-sys-color-inverse-primary: #3b82f6;
-  --md-sys-color-scrim: rgba(0, 0, 0, 0.32);
-  --md-sys-color-shadow: rgba(0, 0, 0, 0.3);
+  --bg-base-rgb: 17 18 22;
+  --bg-panel-rgb: 21 23 28;
+  --bg-card-rgb: 25 27 33;
+  --bg-elevated-rgb: 30 33 40;
+  --bg-inset-rgb: 20 22 27;
+  --bg-hover-rgb: 33 36 44;
+  --bg-active-rgb: 40 44 53;
 
-  --color-bg-primary: var(--md-sys-color-surface);
-  --color-bg-secondary: var(--md-sys-color-surface-container);
-  --color-bg-card: var(--md-sys-color-surface-container-high);
-  --color-text-primary: var(--md-sys-color-on-surface);
-  --color-text-secondary: var(--md-sys-color-on-surface-variant);
-  --color-border: var(--md-sys-color-outline-variant);
-  --color-glass-bg: color-mix(in srgb, var(--md-sys-color-surface-container) 72%, transparent);
-  --shadow-card: var(--md-sys-elevation-level1);
-  --shadow-elevated: var(--md-sys-elevation-level3);
-  --shadow-glow: 0 0 24px rgba(var(--theme-color-rgb), 0.35);
+  --border-rgb: 44 47 56;
+  --border-strong-rgb: 64 68 80;
+
+  --fg-rgb: 231 233 239;
+  --fg-muted-rgb: 154 161 174;
+  --fg-subtle-rgb: 108 114 127;
+
+  --on-accent-rgb: 255 255 255;
+
+  --danger-rgb: 232 94 94;
+  --success-rgb: 72 186 132;
+  --warning-rgb: 230 168 74;
+
+  --violet-rgb: 138 128 240;
+  --cyan-rgb: 74 176 214;
+  --pink-rgb: 226 118 156;
+  --amber-rgb: 226 164 74;
+  --mint-rgb: 70 188 132;
+  --sky-rgb: 88 162 240;
+
+  --scrim-rgb: 2 4 8;
+  --scrim-opacity: 0.6;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.22);
+  --shadow-elevated: 0 12px 30px -16px rgba(0, 0, 0, 0.6);
+  --shadow-dialog: 0 26px 60px -24px rgba(0, 0, 0, 0.72);
+
+  --accent-hover: color-mix(in srgb, var(--accent-color) 84%, white);
+  --accent-soft: color-mix(in srgb, var(--accent-color) 14%, transparent);
+  --accent-muted: color-mix(in srgb, var(--accent-color) 8%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent-color) 36%, transparent);
 }
 
-/* ===== 全局基础样式 ===== */
+/* 基础重置 */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
   background: transparent;
   user-select: none;
 }
 
 body {
-  background: transparent;
-  color: var(--md-sys-color-on-surface);
+  color: rgb(var(--fg-rgb));
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-#root {
-  background: transparent;
+input,
+textarea,
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
 }
 
-/* 滚动条美化 */
+input,
+textarea {
+  user-select: text;
+}
+
+/* 滚动条：PCL/HMCL 都是 8px 以内的细灰条，不带主题色 */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -162,40 +216,189 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--md-sys-color-outline-variant);
-  border-radius: 3px;
+  background: rgb(var(--fg-subtle-rgb) / 0.32);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--md-sys-color-outline);
+  background: rgb(var(--fg-subtle-rgb) / 0.5);
+  background-clip: padding-box;
 }
 
-/* 选中文本颜色 */
 ::selection {
-  background: var(--md-sys-color-primary);
-  color: var(--md-sys-color-on-primary);
+  background: rgb(var(--accent-rgb) / 0.22);
+  color: rgb(var(--fg-rgb));
 }
 
-/* 过渡动画 */
+:focus-visible {
+  outline: 1px solid rgb(var(--accent-rgb) / 0.75);
+  outline-offset: 1px;
+}
+
+button:focus:not(:focus-visible),
+input:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* 过渡动画：短而干脆，避免拖沓 */
 .page-enter {
   opacity: 0;
-  transform: translateY(8px);
 }
+
 .page-enter-active {
   opacity: 1;
-  transform: translateY(0);
-  transition: opacity 0.2s ease-out, transform 0.25s ease-out;
+  transition: opacity 0.15s ease-out;
 }
+
 .page-exit {
   opacity: 1;
 }
+
 .page-exit-active {
   opacity: 0;
-  transition: opacity 0.15s ease-in;
+  transition: opacity 0.1s ease-in;
 }
 
-/* 像素风皮肤图片保持清晰 */
 .pixelated {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
+}
+
+.hairline {
+  border-color: rgb(var(--border-rgb));
+}
+
+.app-drag {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/*
+ * 组件级样式：统一收敛为小圆角、细描边、低阴影。
+ */
+@layer components {
+  /* 面板：白底 + 1px 描边，阴影几乎不可见 */
+  .panel {
+    @apply rounded-card border border-outline-variant bg-surface-high;
+    box-shadow: var(--shadow-card);
+  }
+
+  .panel-fill {
+    @apply rounded-card border border-outline-variant bg-surface-high overflow-hidden;
+    box-shadow: var(--shadow-card);
+  }
+
+  /* 面板头：PCL 的分组标题栏，底部分割线而不是卡片内浮动 */
+  .panel-header {
+    @apply flex items-center gap-2 h-10 px-3.5 border-b border-outline-variant bg-surface-container;
+  }
+
+  /* 兼容旧类名：一律纯色主色，不再输出渐变 */
+  .gradient-brand {
+    background-image: none;
+    background-color: var(--accent-color);
+  }
+
+  .gradient-hero {
+    background-image: none;
+    background-color: var(--accent-color);
+  }
+
+  .gradient-soft {
+    background-image: none;
+    background-color: rgb(var(--accent-rgb) / 0.06);
+  }
+
+  .text-gradient {
+    background-image: none;
+    color: var(--accent-color);
+  }
+
+  /* 强调色块上的小标签：硬边框方块，不用毛玻璃 */
+  .glass-chip {
+    @apply inline-flex items-center gap-1.5 h-5 px-2 rounded-[3px] text-[11px] font-medium;
+    color: rgba(255, 255, 255, 0.95);
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+  }
+
+  .tile {
+    @apply flex items-center justify-center rounded-btn flex-shrink-0;
+  }
+
+  /* hover 只换边框色，不做位移/缩放/加阴影 */
+  .card-lift {
+    @apply transition-colors duration-150;
+  }
+
+  .card-lift:hover {
+    border-color: rgb(var(--accent-rgb) / 0.4);
+    box-shadow: var(--shadow-card);
+  }
+
+  /* 旧版页面背景光斑：直接停用 */
+  .app-aurora {
+    background-image: none;
+  }
+
+  /*
+   * 直接压在壁纸上的文字（首页问候语等）：
+   * 不加发光描影，由 --wallpaper-text-color 自动适配壁纸亮度：
+   * 浅色壁纸用深色文字，深色壁纸用白色文字。
+   */
+  .wallpaper-text {
+    color: var(--wallpaper-text-color, var(--md-sys-color-on-surface));
+    transition: color 200ms ease;
+  }
+
+  /* 首页问候语位于画面中部，单独取中部亮度，避免与顶部标题判断互相干扰 */
+  .wallpaper-text-mid {
+    color: var(--wallpaper-text-color-mid, var(--wallpaper-text-color, var(--md-sys-color-on-surface)));
+    transition: color 200ms ease;
+  }
+
+  /* 启动 Logo：只有图标，无背板，轻微放大淡入 + 柔和投影 */
+  .splash-logo {
+    filter: drop-shadow(0 10px 26px rgb(0 0 0 / 0.28));
+    animation: splash-logo-in 620ms cubic-bezier(0.18, 0.9, 0.24, 1) both;
+  }
+
+  @keyframes splash-logo-in {
+    from {
+      opacity: 0;
+      transform: scale(0.82);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* 分段控件：PCL 顶部标签的形态 */
+  .segmented {
+    @apply inline-flex items-center p-0.5 rounded-[4px] border border-outline-variant bg-surface-high;
+  }
+
+  .segmented-item {
+    @apply h-7 px-3 rounded-[3px] text-xs font-medium transition-colors duration-150;
+  }
+
+  .segmented-item-active {
+    @apply bg-primary text-white;
+  }
+
+  .segmented-item-idle {
+    @apply text-on-surface-variant hover:bg-surface-hover hover:text-on-surface;
+  }
+
+  /* 日志控制台 */
+  .console {
+    @apply rounded-btn border border-outline-variant bg-surface-low;
+    font-family: "Cascadia Mono", "JetBrains Mono", Consolas, "Courier New", monospace;
+  }
 }

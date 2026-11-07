@@ -135,6 +135,7 @@ pub async fn authenticate_microsoft(
             chrono::Utc::now().timestamp() + ms_token.expires_in as i64,
         ),
         is_active: true,
+        auth_server: None,
     })
 }
 

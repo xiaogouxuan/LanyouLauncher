@@ -140,6 +140,12 @@ pub fn build_launch_args(
     } else {
         account.access_token.clone().unwrap_or_default()
     };
+    // 外置登录使用 mojang 类型，微软与离线账号使用 msa
+    let user_type = if account.account_type == AccountType::ThirdParty {
+        "mojang"
+    } else {
+        "msa"
+    };
     // 客户端 jar 路径，部分旧版 Forge/OptiFine 需要 ${primary_jar}
     let primary_jar = versions_dir
         .join(&config.version_id)
@@ -150,7 +156,7 @@ pub fn build_launch_args(
         ("auth_session", access_token.clone()),
         ("auth_access_token", access_token.clone()),
         ("auth_uuid", auth_uuid.clone()),
-        ("user_type", "msa".to_string()),
+        ("user_type", user_type.to_string()),
         ("user_properties", "{}".to_string()),
         ("version_name", config.version_id.clone()),
         (
@@ -267,6 +273,19 @@ pub fn build_launch_args(
         }
     }
 
+    // 外置登录：通过 authlib-injector 注入认证服务器
+    if account.account_type == AccountType::ThirdParty {
+        if let Some(server) = account.auth_server.as_deref().filter(|s| !s.is_empty()) {
+            let injector = crate::utils::paths::get_launcher_dir().join("authlib-injector.jar");
+            if injector.exists() {
+                args.push(format!("-javaagent:{}={}", injector.display(), server));
+                args.push("-Dauthlibinjector.side=client".to_string());
+            } else {
+                log::warn!("authlib-injector.jar 不存在，外置登录可能无法生效");
+            }
+        }
+    }
+
     // 用户自定义 JVM 参数
     args.extend(config.jvm_args.clone());
 
@@ -309,7 +328,7 @@ pub fn build_launch_args(
     if !known_game_flags.contains("userType") {
         args.push("--userType".to_string());
         // HMCL 对微软账号和离线账号均使用 "msa"，避免部分服务器/核心将 mojang 视为无效而触发 Demo
-        args.push("msa".to_string());
+        args.push(user_type.to_string());
     }
     if !known_game_flags.contains("userProperties") {
         args.push("--userProperties".to_string());
@@ -331,7 +350,35 @@ pub fn build_launch_args(
     args.push("--height".to_string());
     args.push(config.resolution_height.to_string());
 
+    // 联机一键进服：直接把服务器地址传给客户端
+    if let Some(ref address) = config.server_address {
+        let address = address.trim();
+        if !address.is_empty() {
+            let (host, port) = match address.rsplit_once(':') {
+                Some((host, port)) => (host, port),
+                None => (address, "25565"),
+            };
+            if supports_quick_play(&config.version_id) {
+                args.push("--quickPlayMultiplayer".to_string());
+                args.push(format!("{}:{}", host, port));
+            } else {
+                args.push("--server".to_string());
+                args.push(host.to_string());
+                args.push("--port".to_string());
+                args.push(port.to_string());
+            }
+        }
+    }
+
     Ok(args)
+}
+
+/// 判断版本是否支持 quickPlay 直连参数（1.20 及以上）
+fn supports_quick_play(version_id: &str) -> bool {
+    let mut parts = version_id.split('.');
+    let major = parts.next().and_then(|part| part.parse::<u32>().ok()).unwrap_or(1);
+    let minor = parts.next().and_then(|part| part.parse::<u32>().ok()).unwrap_or(0);
+    (major, minor) >= (1, 20)
 }
 
 /// 解析参数数组，处理条件规则和变量替换

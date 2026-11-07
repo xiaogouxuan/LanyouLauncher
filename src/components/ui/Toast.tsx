@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
-import { CheckCircle, AlertCircle, XCircle, X } from "lucide-react";
+import { CheckCircle2, AlertCircle, XCircle, X } from "lucide-react";
 
 interface ToastMessage {
   id: string;
@@ -20,20 +20,14 @@ export function useToast() {
 }
 
 const iconMap = {
-  success: CheckCircle,
+  success: CheckCircle2,
   error: XCircle,
   info: AlertCircle,
 };
 
-const containerStyles: Record<string, string> = {
-  success: "bg-inverse-surface text-inverse-on-surface",
-  error: "bg-error-container text-on-error-container border-error/30",
-  info: "bg-primary-container text-on-primary-container border-primary/30",
-};
-
 const iconColorMap: Record<string, string> = {
-  success: "text-inverse-primary",
-  error: "text-error",
+  success: "text-success",
+  error: "text-danger",
   info: "text-primary",
 };
 
@@ -41,11 +35,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const showToast = useCallback((type: ToastMessage["type"], message: string) => {
-    const id = Date.now().toString();
+    const id = Date.now().toString() + Math.random().toString(36).slice(2, 6);
     setToasts((prev) => [...prev, { id, type, message }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3000);
+    }, 3200);
   }, []);
 
   const dismiss = (id: string) => {
@@ -55,22 +49,23 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div className="fixed top-14 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+      <div className="fixed bottom-4 right-4 z-[10000] flex flex-col gap-2 pointer-events-none">
         {toasts.map((toast) => {
           const Icon = iconMap[toast.type];
           return (
             <div
               key={toast.id}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl border shadow-md 
-                animate-slide-up pointer-events-auto min-w-[260px] ${containerStyles[toast.type]}`}
+              className="relative flex items-center gap-2.5 pl-4 pr-3 py-2.5 rounded-btn bg-surface-highest
+                border border-outline-variant shadow-elevated animate-slide-up pointer-events-auto
+                min-w-[240px] max-w-[380px] overflow-hidden"
             >
-              <Icon size={18} className={iconColorMap[toast.type]} />
-              <span className="text-sm flex-1">{toast.message}</span>
+              <Icon size={16} className={iconColorMap[toast.type]} />
+              <span className="text-[13px] text-on-surface flex-1 break-words">{toast.message}</span>
               <button
                 onClick={() => dismiss(toast.id)}
-                className="p-1 rounded-full hover:bg-on-surface/[0.08] transition-colors"
+                className="p-1 rounded-btn text-on-surface-subtle hover:bg-surface-hover hover:text-on-surface transition-colors"
               >
-                <X size={14} />
+                <X size={13} />
               </button>
             </div>
           );

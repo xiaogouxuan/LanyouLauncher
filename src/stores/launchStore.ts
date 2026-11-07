@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { LaunchConfig, LogEntry, LaunchProgress } from "@/types/launch";
+import type { LaunchConfig, LogEntry, LaunchProgress, LaunchInstance } from "@/types/launch";
 
 const defaultLaunchConfig: LaunchConfig = {
   version_id: "",
@@ -15,7 +15,7 @@ const defaultLaunchConfig: LaunchConfig = {
 
 const defaultLaunchProgress: LaunchProgress = {
   step: 0,
-  total: 5,
+  total: 7,
   label: "",
 };
 
@@ -25,6 +25,7 @@ interface LaunchState {
   logs: LogEntry[];
   launchConfig: LaunchConfig;
   launchProgress: LaunchProgress;
+  runningInstances: LaunchInstance[];
   setIsLaunching: (v: boolean) => void;
   setIsRunning: (v: boolean) => void;
   setLaunchConfig: (config: Partial<LaunchConfig>) => void;
@@ -34,6 +35,9 @@ interface LaunchState {
   setLaunchFailed: (entry: LogEntry) => void;
   setLaunchProgress: (progress: Partial<LaunchProgress>) => void;
   resetLaunchProgress: () => void;
+  addRunningInstance: (instance: LaunchInstance) => void;
+  removeRunningInstance: (pid: number) => void;
+  clearRunningInstances: () => void;
 }
 
 export const useLaunchStore = create<LaunchState>()((set) => ({
@@ -42,6 +46,7 @@ export const useLaunchStore = create<LaunchState>()((set) => ({
   logs: [],
   launchConfig: { ...defaultLaunchConfig },
   launchProgress: { ...defaultLaunchProgress },
+  runningInstances: [],
   setIsLaunching: (v) => set({ isLaunching: v }),
   setIsRunning: (v) => set({ isRunning: v }),
   setLaunchConfig: (config) =>
@@ -57,7 +62,7 @@ export const useLaunchStore = create<LaunchState>()((set) => ({
   setLaunchFailed: (entry) =>
     set((s) => ({
       isLaunching: false,
-      isRunning: false,
+      isRunning: s.runningInstances.length > 0,
       launchProgress: { ...defaultLaunchProgress },
       logs: [...s.logs.slice(-500), entry],
     })),
@@ -66,4 +71,22 @@ export const useLaunchStore = create<LaunchState>()((set) => ({
       launchProgress: { ...s.launchProgress, ...progress },
     })),
   resetLaunchProgress: () => set({ launchProgress: { ...defaultLaunchProgress } }),
+  addRunningInstance: (instance) =>
+    set((s) => ({
+      runningInstances: [...s.runningInstances, instance],
+      isRunning: true,
+    })),
+  removeRunningInstance: (pid) =>
+    set((s) => {
+      const next = s.runningInstances.filter((i) => i.pid !== pid);
+      return {
+        runningInstances: next,
+        isRunning: next.length > 0,
+      };
+    }),
+  clearRunningInstances: () =>
+    set({
+      runningInstances: [],
+      isRunning: false,
+    }),
 }));

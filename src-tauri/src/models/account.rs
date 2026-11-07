@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-/// 账号类型：离线账号或微软正版账号
+/// 账号类型：离线账号、微软正版账号或外置登录（Yggdrasil / authlib-injector）
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AccountType {
     Offline,
     Microsoft,
+    ThirdParty,
 }
 
 /// 账号数据结构
@@ -28,6 +29,9 @@ pub struct Account {
     pub expires_at: Option<i64>,
     /// 是否为当前活跃账号
     pub is_active: bool,
+    /// 外置登录认证服务器地址（仅 ThirdParty 账号）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_server: Option<String>,
 }
 
 /// 账号列表存储结构

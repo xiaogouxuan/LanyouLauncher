@@ -28,26 +28,34 @@ pub fn get_versions_dir(minecraft_dir: &std::path::Path) -> PathBuf {
     minecraft_dir.join("versions")
 }
 
-/// 获取 Mods 目录
-pub fn get_mods_dir(minecraft_dir: &std::path::Path) -> PathBuf {
+/// 获取全局 Mods 目录
+pub fn get_global_mods_dir(minecraft_dir: &std::path::Path) -> PathBuf {
     minecraft_dir.join("mods")
 }
 
 /// 获取指定版本的 Mods 目录
-/// 若传入版本 ID，优先使用该版本的 mods 目录，便于版本隔离
+/// 若该版本启用了版本隔离，返回 versions/<id>/mods；
+/// 否则返回全局 .minecraft/mods。
+/// 调用方需自行确保目录存在。
 pub fn get_mods_dir_for_version(
     minecraft_dir: &std::path::Path,
     version_id: Option<&str>,
 ) -> PathBuf {
     if let Some(id) = version_id {
-        let version_mods_dir = get_versions_dir(minecraft_dir)
-            .join(id)
-            .join("mods");
-        if version_mods_dir.exists() || std::fs::create_dir_all(&version_mods_dir).is_ok() {
-            return version_mods_dir;
+        let meta_file = get_version_meta_file(minecraft_dir, id);
+        let is_isolated = std::fs::read_to_string(&meta_file)
+            .ok()
+            .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+            .and_then(|json| json.get("is_isolated").and_then(|v| v.as_bool()))
+            .unwrap_or(false);
+
+        if is_isolated {
+            return get_versions_dir(minecraft_dir)
+                .join(id)
+                .join("mods");
         }
     }
-    get_mods_dir(minecraft_dir)
+    get_global_mods_dir(minecraft_dir)
 }
 
 /// 获取账号存储文件路径

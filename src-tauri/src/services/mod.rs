@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod easytier;
 pub mod java;
 pub mod launch;
 pub mod mod_platform;

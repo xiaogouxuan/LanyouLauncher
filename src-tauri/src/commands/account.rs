@@ -49,6 +49,7 @@ pub async fn login_offline(
         refresh_token: None,
         expires_at: None,
         is_active: true,
+        auth_server: None,
     };
 
     save_account(&state, &account)?;
@@ -64,6 +65,25 @@ pub async fn login_microsoft(
     window_title: String,
 ) -> Result<Account, I18nError> {
     let account = crate::services::auth::microsoft::authenticate_microsoft(&app, &state, &window_title).await?;
+    save_account(&state, &account)?;
+    Ok(account)
+}
+
+/// 外置登录（Yggdrasil / authlib-injector）
+#[tauri::command]
+pub async fn login_third_party(
+    state: State<'_, AppState>,
+    auth_server: String,
+    username: String,
+    password: String,
+) -> Result<Account, I18nError> {
+    let account = crate::services::auth::thirdparty::authenticate_third_party(
+        &state,
+        &auth_server,
+        &username,
+        &password,
+    )
+    .await?;
     save_account(&state, &account)?;
     Ok(account)
 }

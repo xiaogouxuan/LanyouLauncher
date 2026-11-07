@@ -8,6 +8,7 @@ const Versions = lazy(() => import("@/pages/Versions"));
 const VersionDetail = lazy(() => import("@/pages/VersionDetail"));
 const Mods = lazy(() => import("@/pages/Mods"));
 const ModDetail = lazy(() => import("@/pages/ModDetail"));
+const Multiplayer = lazy(() => import("@/pages/Multiplayer"));
 const Accounts = lazy(() => import("@/pages/Accounts"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const SkinPreviewPage = lazy(() => import("@/pages/SkinPreviewPage"));
@@ -40,6 +41,10 @@ export const router = createBrowserRouter([
       {
         path: "mods/:id",
         element: <LazyPage><ModDetail /></LazyPage>,
+      },
+      {
+        path: "multiplayer",
+        element: <LazyPage><Multiplayer /></LazyPage>,
       },
       {
         path: "accounts",

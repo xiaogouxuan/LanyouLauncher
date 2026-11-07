@@ -1,13 +1,23 @@
 import { useState, useEffect } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { ExternalLink, ArrowUpRight, Globe, Palette, Download, Coffee, Monitor, Shield, Info, Image, X, LogOut } from "lucide-react";
+import {
+  Globe,
+  Palette,
+  Download,
+  Coffee,
+  Cpu,
+  Shield,
+  Info,
+  Image,
+  X,
+  ArrowUpRight,
+  Check,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Switch } from "@/components/ui/Switch";
 import { Select } from "@/components/ui/Select";
 import { Slider } from "@/components/ui/Slider";
-import { Avatar } from "@/components/ui/Avatar";
 import { PageTransition } from "@/components/common/PageTransition";
 import { useTranslation } from "@/i18n";
 import { useUIStore } from "@/stores/uiStore";
@@ -18,6 +28,51 @@ import { formatMemory } from "@/utils/format";
 import { settingsService, type SystemInfo } from "@/services/settingsService";
 import { updateService } from "@/services/updateService";
 import type { ThemeMode, DownloadSource } from "@/types/settings";
+import { BUILTIN_WALLPAPERS, accessibleAccent } from "@/lib/wallpaperTheme";
+
+const THEME_COLORS = ["#2F6BFF", "#6D5CE7", "#1A9BC4", "#20A66E", "#D98E20", "#DB5282"];
+
+function Section({
+  icon,
+  title,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-card border border-outline-variant bg-surface-high overflow-hidden shadow-card">
+      <div className="flex items-center gap-2.5 px-4 h-11 border-b border-outline-variant">
+        <span className="w-5 h-5 rounded-[4px] bg-primary/10 text-primary flex items-center justify-center">
+          {icon}
+        </span>
+        <h3 className="text-[13px] font-semibold text-on-surface">{title}</h3>
+      </div>
+      <div>{children}</div>
+    </section>
+  );
+}
+
+function Row({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-3 border-b border-outline-variant last:border-b-0">
+      <div className="min-w-0">
+        <p className="text-[13px] text-on-surface">{label}</p>
+        {description && <p className="text-[11px] text-on-surface-subtle mt-0.5">{description}</p>}
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">{children}</div>
+    </div>
+  );
+}
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -53,10 +108,10 @@ export default function Settings() {
   const [detectingJava, setDetectingJava] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [selectingBg, setSelectingBg] = useState(false);
+  const [downloadingJava, setDownloadingJava] = useState<number | null>(null);
   const [detectedJava, setDetectedJava] = useState<[string, string][]>([]);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
 
-  // 加载设置
   useEffect(() => {
     settingsService
       .getSettings()
@@ -73,7 +128,6 @@ export default function Settings() {
       .catch(() => {});
   }, [setSettings, setLanguage, setTheme]);
 
-  // 设置变化时自动保存
   useEffect(() => {
     settingsService.saveSettings(settings).catch(() => {});
   }, [settings]);
@@ -90,6 +144,22 @@ export default function Settings() {
       showToast("error", String(error));
     } finally {
       setDetectingJava(false);
+    }
+  };
+
+  const handleDownloadJava = async (major: number) => {
+    setDownloadingJava(major);
+    try {
+      const path = await settingsService.downloadJava(major);
+      const paths = Array.from(new Set([...settings.java_paths, path]));
+      updateSetting("java_paths", paths);
+      const version = await settingsService.getJavaVersion(path).catch(() => "");
+      setDetectedJava((prev) => Array.from(new Map([...prev, [path, version]])));
+      showToast("success", t("settings.javaDownloadComplete", { major: String(major) }));
+    } catch (error) {
+      showToast("error", `${t("settings.javaDownloadFailed")}: ${String(error)}`);
+    } finally {
+      setDownloadingJava(null);
     }
   };
 
@@ -120,8 +190,8 @@ export default function Settings() {
     try {
       const path = await settingsService.selectBackgroundImage();
       if (path) {
+        updateSetting("wallpaper", "");
         updateSetting("background_image", path);
-        updateSetting("wallpaper", ""); // 自定义图片优先于内置壁纸
         showToast("success", t("settings.backgroundSet"));
       }
     } catch (error) {
@@ -131,164 +201,192 @@ export default function Settings() {
     }
   };
 
+  const handleSelectSolidWallpaper = (color: string) => {
+    updateSetting("background_image", "");
+    updateSetting("wallpaper", `solid:${color}`);
+    updateSetting("theme_color", accessibleAccent(color));
+    showToast("success", t("settings.backgroundSet"));
+  };
+
   const handleClearBackground = () => {
     updateSetting("background_image", "");
     showToast("success", t("settings.backgroundCleared"));
   };
 
-  const wallpaperButtonBase = "flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border transition-colors";
-  const wallpaperButtonActive = "border-primary bg-primary-container text-on-primary-container";
-  const wallpaperButtonInactive = "border-outline-variant bg-surface-container text-on-surface-variant hover:text-on-surface";
+  const javaList =
+    detectedJava.length > 0
+      ? detectedJava
+      : settings.java_paths.map((path) => [path, ""] as [string, string]);
+
+  const wallpaperActive = "border-primary ring-1 ring-primary";
+  const wallpaperIdle = "border-outline-variant hover:border-outline";
 
   return (
     <PageTransition>
-      <div className="p-6 space-y-6">
-        <h1 className="text-2xl font-bold text-on-surface">
-          {t("settings.title")}
-        </h1>
+      <div className="p-5 max-w-[860px] mx-auto space-y-3.5">
+        <div className="pb-3 border-b border-outline-variant">
+          <h1 className="wallpaper-text text-[18px] font-semibold tracking-tight">{t("settings.title")}</h1>
+        </div>
 
-        {/* 通用设置 */}
-        <Card>
-          <div className="flex items-center gap-2 mb-4">
-            <Globe size={16} className="text-on-surface-variant" />
-            <h3 className="text-sm font-semibold text-on-surface">
-              {t("settings.general")}
-            </h3>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-on-surface">
-                {t("settings.language")}
-              </span>
-              <Select
-                options={languageOptions}
-                value={language}
-                onChange={(v) => {
-                  setLanguage(v);
-                  updateSetting("language", v);
-                }}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-on-surface">
-                {t("settings.theme")}
-              </span>
-              <Select
-                options={themeOptions}
-                value={theme}
-                onChange={(v) => {
-                  setTheme(v as ThemeMode);
-                  updateSetting("theme", v as ThemeMode);
-                }}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-on-surface">
-                {t("settings.closeAfterLaunch")}
-              </span>
-              <Switch
-                checked={settings.close_after_launch}
-                onChange={(v) => updateSetting("close_after_launch", v)}
-              />
-            </div>
-          </div>
-        </Card>
+        <Section icon={<Globe size={15} />} title={t("settings.general")}>
+          <Row label={t("settings.language")}>
+            <Select
+              className="w-[150px]"
+              options={languageOptions}
+              value={language}
+              onChange={(v) => {
+                setLanguage(v);
+                updateSetting("language", v);
+              }}
+            />
+          </Row>
+          <Row label={t("settings.theme")}>
+            <Select
+              className="w-[150px]"
+              options={themeOptions}
+              value={theme}
+              onChange={(v) => {
+                setTheme(v as ThemeMode);
+                updateSetting("theme", v as ThemeMode);
+              }}
+            />
+          </Row>
+          <Row label={t("settings.closeAfterLaunch")}>
+            <Switch
+              checked={settings.close_after_launch}
+              onChange={(v) => updateSetting("close_after_launch", v)}
+            />
+          </Row>
+        </Section>
 
-        {/* 外观设置 */}
-        <Card>
-          <div className="flex items-center gap-2 mb-4">
-            <Palette size={16} className="text-on-surface-variant" />
-            <h3 className="text-sm font-semibold text-on-surface">
-              {t("settings.appearance")}
-            </h3>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-on-surface">
-                {t("settings.themeColor")}
-              </span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-on-surface-variant font-mono">
-                  {settings.theme_color}
-                </span>
+        <Section icon={<Palette size={15} />} title={t("settings.appearance")}>
+          <Row label={t("settings.themeColor")}>
+            <div className="flex items-center gap-1.5">
+              {THEME_COLORS.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => updateSetting("theme_color", color)}
+                  className={`w-6 h-6 rounded-full flex items-center justify-center transition-transform hover:scale-105 ${
+                    settings.theme_color.toLowerCase() === color.toLowerCase()
+                      ? "ring-1 ring-primary"
+                      : ""
+                  }`}
+                  style={{ backgroundColor: color }}
+                  aria-label={color}
+                >
+                  {settings.theme_color.toLowerCase() === color.toLowerCase() && (
+                    <Check size={12} className="text-white" />
+                  )}
+                </button>
+              ))}
+              <input
+                type="color"
+                value={settings.theme_color}
+                onChange={(e) => updateSetting("theme_color", e.target.value)}
+                className="w-6 h-6 rounded-full border border-outline-variant bg-transparent cursor-pointer overflow-hidden"
+                title={t("settings.themeColor")}
+              />
+            </div>
+          </Row>
+
+          <div className="px-4 py-3 border-b border-outline-variant">
+            <p className="text-[13px] text-on-surface mb-2.5">{t("settings.wallpaper")}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  updateSetting("wallpaper", "");
+                  updateSetting("background_image", "");
+                }}
+                className={`h-[52px] w-[84px] rounded-btn border text-[11px] transition-colors ${
+                  settings.wallpaper === "" && !settings.background_image
+                    ? wallpaperActive
+                    : wallpaperIdle
+                } bg-surface-container text-on-surface-variant`}
+              >
+                {t("settings.wallpaperNone")}
+              </button>
+              {BUILTIN_WALLPAPERS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    updateSetting("background_image", "");
+                    updateSetting("wallpaper", item.id);
+                    // 切壁纸时同步切换配套主题色，让整个界面与壁纸浑然一体
+                    updateSetting("theme_color", item.themeColor);
+                  }}
+                  className={`relative h-[52px] w-[84px] rounded-btn border overflow-hidden transition-colors ${
+                    settings.wallpaper === item.id ? wallpaperActive : wallpaperIdle
+                  }`}
+                >
+                  <span
+                    className="absolute inset-0 bg-cover bg-center"
+                    style={{ backgroundImage: `url(/img/${item.id}.jpg)` }}
+                  />
+                  <span
+                    className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full border border-white/70 shadow-sm"
+                    style={{ backgroundColor: item.themeColor }}
+                  />
+                  <span className="absolute inset-x-0 bottom-0 px-1.5 py-0.5 text-[10px] text-white bg-black/45 truncate text-left">
+                    {t(item.nameKey)}
+                  </span>
+                </button>
+              ))}
+              <div
+                className={`relative h-[52px] w-[84px] rounded-btn border overflow-hidden transition-colors ${
+                  settings.wallpaper.startsWith("solid:") ? wallpaperActive : wallpaperIdle
+                } bg-surface-container`}
+              >
                 <input
                   type="color"
-                  value={settings.theme_color}
-                  onChange={(e) => updateSetting("theme_color", e.target.value)}
-                  className="w-8 h-8 rounded-md border border-outline-variant bg-transparent cursor-pointer"
-                  title={t("settings.themeColor")}
+                  value={
+                    settings.wallpaper.startsWith("solid:")
+                      ? settings.wallpaper.slice(6)
+                      : settings.theme_color
+                  }
+                  onChange={(e) => handleSelectSolidWallpaper(e.target.value)}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  title={t("settings.wallpaperSolid")}
                 />
+                <span
+                  className="pointer-events-none absolute inset-0"
+                  style={{
+                    backgroundColor: settings.wallpaper.startsWith("solid:")
+                      ? settings.wallpaper.slice(6)
+                      : settings.theme_color,
+                  }}
+                />
+                <span className="pointer-events-none absolute inset-x-0 bottom-0 px-1.5 py-0.5 text-[10px] text-white bg-black/45 truncate text-left">
+                  {t("settings.wallpaperSolid")}
+                </span>
               </div>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-on-surface">{t("settings.wallpaper")}</span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => updateSetting("wallpaper", "")}
-                  className={`${wallpaperButtonBase} ${settings.wallpaper === "" ? wallpaperButtonActive : wallpaperButtonInactive}`}
-                >
-                  {t("settings.wallpaperNone")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateSetting("wallpaper", "img1")}
-                  className={`${wallpaperButtonBase} ${settings.wallpaper === "img1" ? wallpaperButtonActive : wallpaperButtonInactive}`}
-                >
-                  <span
-                    className="w-4 h-4 rounded-sm bg-cover bg-center border border-outline-variant/50"
-                    style={{ backgroundImage: "url(/img/img1.png)" }}
-                  />
-                  {t("settings.wallpaperAzureHorizon")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateSetting("wallpaper", "img2")}
-                  className={`${wallpaperButtonBase} ${settings.wallpaper === "img2" ? wallpaperButtonActive : wallpaperButtonInactive}`}
-                >
-                  <span
-                    className="w-4 h-4 rounded-sm bg-cover bg-center border border-outline-variant/50"
-                    style={{ backgroundImage: "url(/img/img2.png)" }}
-                  />
-                  {t("settings.wallpaperTwilightSakura")}
-                </button>
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-on-surface">
-                {t("settings.backgroundImage")}
-              </span>
-              <div className="flex items-center gap-2">
-                {settings.background_image && (
-                  <div
-                    className="w-10 h-10 rounded-full bg-cover bg-center border border-outline-variant"
-                    style={{
-                      backgroundImage: `url(${convertFileSrc(settings.background_image)})`,
-                    }}
-                    title={settings.background_image}
-                  />
-                )}
-                {settings.background_image ? (
-                  <Button
-                    size="sm"
-                    variant="tonal"
-                    onClick={handleClearBackground}
-                    title={t("settings.clearBackground")}
-                  >
-                    <X size={14} />
-                  </Button>
-                ) : null}
-                <Button
-                  size="sm"
-                  variant="tonal"
-                  onClick={handleSelectBackground}
-                  loading={selectingBg}
-                >
-                  <Image size={14} className="mr-1" />
-                  {t("settings.selectBackground")}
+          </div>
+
+          <Row label={t("settings.backgroundImage")}>
+            <div className="flex items-center gap-2">
+              {settings.background_image && (
+                <div
+                  className="w-9 h-9 rounded-btn bg-cover bg-center border border-outline-variant"
+                  style={{ backgroundImage: `url("${convertFileSrc(settings.background_image)}")` }}
+                  title={settings.background_image}
+                />
+              )}
+              {settings.background_image && (
+                <Button size="sm" variant="text" onClick={handleClearBackground} title={t("settings.clearBackground")}>
+                  <X size={14} />
                 </Button>
-              </div>
+              )}
+              <Button size="sm" variant="tonal" onClick={handleSelectBackground} loading={selectingBg}>
+                <Image size={14} />
+                {t("settings.selectBackground")}
+              </Button>
             </div>
+          </Row>
+
+          <div className="px-4 py-3 border-b border-outline-variant">
             <Slider
               min={0.05}
               max={1}
@@ -298,6 +396,8 @@ export default function Settings() {
               label={t("settings.backgroundOpacity")}
               formatValue={(v) => `${Math.round(v * 100)}%`}
             />
+          </div>
+          <div className="px-4 py-3">
             <Slider
               min={0}
               max={32}
@@ -308,59 +408,34 @@ export default function Settings() {
               formatValue={(v) => `${Math.round((v / 32) * 100)}%`}
             />
           </div>
-        </Card>
+        </Section>
 
-        {/* 下载设置 */}
-        <Card>
-          <div className="flex items-center gap-2 mb-4">
-            <Download size={16} className="text-on-surface-variant" />
-            <h3 className="text-sm font-semibold text-on-surface">
-              {t("settings.download")}
-            </h3>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-on-surface">
-              {t("settings.downloadSource")}
-            </span>
+        <Section icon={<Download size={15} />} title={t("settings.download")}>
+          <Row label={t("settings.downloadSource")}>
             <Select
+              className="w-[170px]"
               options={downloadSourceOptions}
               value={settings.download_source}
               onChange={(v) => updateSetting("download_source", v as DownloadSource)}
             />
-          </div>
-        </Card>
+          </Row>
+        </Section>
 
-        {/* Java 设置 */}
-        <Card>
-          <div className="flex items-center gap-2 mb-4">
-            <Coffee size={16} className="text-on-surface-variant" />
-            <h3 className="text-sm font-semibold text-on-surface">
-              {t("settings.java")}
-            </h3>
-          </div>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-on-surface">
-                {t("settings.javaPath")}
-              </span>
-              <Button
-                size="sm"
-                variant="tonal"
-                onClick={handleDetectJava}
-                loading={detectingJava}
-              >
+        <Section icon={<Coffee size={15} />} title={t("settings.java")}>
+          <div className="px-4 py-3 border-b border-outline-variant">
+            <div className="flex items-center justify-between gap-4 mb-2">
+              <p className="text-[13px] text-on-surface">{t("settings.javaPath")}</p>
+              <Button size="sm" variant="tonal" onClick={handleDetectJava} loading={detectingJava}>
                 {t("settings.autoDetect")}
               </Button>
             </div>
-            {(detectedJava.length > 0 ? detectedJava : settings.java_paths.map((p) => [p, ""] as [string, string])).length === 0 ? (
-              <p className="text-xs text-on-surface-variant">
-                {t("settings.noJavaFound")}
-              </p>
+            {javaList.length === 0 ? (
+              <p className="text-[11.5px] text-on-surface-subtle">{t("settings.noJavaFound")}</p>
             ) : (
-              (detectedJava.length > 0 ? detectedJava : settings.java_paths.map((p) => [p, ""] as [string, string])).map(
-                ([path, version], i) => (
-                  <div key={i} className="flex items-center justify-between gap-2 text-xs">
-                    <p className="text-on-surface-variant truncate flex-1" title={path}>
+              <div className="space-y-1.5">
+                {javaList.map(([path, version], index) => (
+                  <div key={`${path}-${index}`} className="flex items-center justify-between gap-3">
+                    <p className="text-[11.5px] text-on-surface-variant truncate flex-1 font-mono" title={path}>
                       {path}
                     </p>
                     {version && (
@@ -369,31 +444,46 @@ export default function Settings() {
                       </Badge>
                     )}
                   </div>
-                ),
-              )
+                ))}
+              </div>
             )}
           </div>
-        </Card>
-
-        {/* 内存设置 */}
-        <Card>
-          <div className="flex items-center gap-2 mb-4">
-            <Monitor size={16} className="text-on-surface-variant" />
-            <h3 className="text-sm font-semibold text-on-surface">
-              {t("settings.memory")}
-            </h3>
+          <div className="px-4 py-3">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[13px] text-on-surface">{t("settings.downloadJava", { major: "8 / 17 / 21" })}</p>
+                <p className="text-[11px] text-on-surface-subtle mt-0.5">{t("settings.javaDownloadHint")}</p>
+              </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {[8, 17, 21].map((major) => (
+                  <Button
+                    key={major}
+                    size="sm"
+                    variant="outlined"
+                    onClick={() => handleDownloadJava(major)}
+                    loading={downloadingJava === major}
+                    disabled={downloadingJava !== null}
+                  >
+                    {downloadingJava === major
+                      ? t("settings.downloadingJava", { major: String(major) })
+                      : `${major}`}
+                  </Button>
+                ))}
+              </div>
+            </div>
           </div>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-on-surface-variant">
-                {t("settings.currentMemory")}
-              </span>
-              <span className="text-on-surface font-medium">
+        </Section>
+
+        <Section icon={<Cpu size={15} />} title={t("settings.memory")}>
+          <div className="px-4 py-3 border-b border-outline-variant">
+            <div className="flex items-center justify-between text-[12px]">
+              <span className="text-on-surface-variant">{t("settings.currentMemory")}</span>
+              <span className="text-on-surface font-medium tabular-nums">
                 {formatMemory(settings.default_memory)}
               </span>
             </div>
             {systemInfo && (
-              <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center justify-between text-[12px] mt-2">
                 <span className="text-on-surface-variant">
                   {t("settings.recommendedMemory", {
                     total: formatMemory(systemInfo.total_memory_mb),
@@ -401,7 +491,7 @@ export default function Settings() {
                 </span>
                 <Button
                   size="sm"
-                  variant="tonal"
+                  variant="text"
                   onClick={handleUseRecommendedMemory}
                   disabled={settings.default_memory === systemInfo.recommended_memory_mb}
                 >
@@ -409,121 +499,87 @@ export default function Settings() {
                 </Button>
               </div>
             )}
+          </div>
+          <div className="px-4 py-3.5">
             <Slider
               min={512}
-              max={32768}
+              max={Math.max(systemInfo?.total_memory_mb ?? 8192, 8192)}
               step={256}
               value={settings.default_memory}
               onChange={(v) => updateSetting("default_memory", v)}
               formatValue={formatMemory}
             />
           </div>
-        </Card>
+        </Section>
 
-        {/* 更新设置 */}
-        <Card>
-          <div className="flex items-center gap-2 mb-4">
-            <Shield size={16} className="text-on-surface-variant" />
-            <h3 className="text-sm font-semibold text-on-surface">
-              {t("settings.update")}
-            </h3>
-          </div>
-          <div className="space-y-3">
+        <Section icon={<Shield size={15} />} title={t("settings.update")}>
+          <Row label={t("settings.autoUpdate")}>
             <Switch
               checked={settings.auto_update}
               onChange={(v) => updateSetting("auto_update", v)}
-              label={t("settings.autoUpdate")}
             />
-            <Button
-              size="sm"
-              variant="tonal"
-              onClick={handleCheckUpdate}
-              loading={checkingUpdate}
-            >
+          </Row>
+          <Row label={t("settings.checkUpdate")}>
+            <Button size="sm" variant="tonal" onClick={handleCheckUpdate} loading={checkingUpdate}>
               {t("settings.checkUpdate")}
             </Button>
-          </div>
-        </Card>
+          </Row>
+        </Section>
 
-        {/* 关于 */}
-        <Card>
-          <div className="flex items-center gap-2 mb-4">
-            <Info size={16} className="text-on-surface-variant" />
-            <h3 className="text-sm font-semibold text-on-surface">
-              {t("settings.about")}
-            </h3>
-          </div>
-
-          <div className="space-y-3">
-            {/* 卡片1：启动器介绍 */}
-            <div
-              onClick={() => handleOpenUrl(GITHUB_REPO)}
-              className="flex items-center justify-between p-3 rounded-xl bg-surface-container hover:bg-surface-container-high 
-                cursor-pointer transition-all duration-200 hover:shadow-sm hover:scale-[1.01]"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary-container flex items-center justify-center flex-shrink-0">
-                  <span className="text-on-primary-container font-bold text-sm">L</span>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-on-surface">
-                    {APP_NAME}
-                  </p>
-                  <p className="text-xs text-on-surface-variant">
-                    {t("settings.version")} {APP_VERSION}
-                  </p>
-                </div>
+        <Section icon={<Info size={15} />} title={t("settings.about")}>
+          <button
+            type="button"
+            onClick={() => handleOpenUrl(GITHUB_REPO)}
+            className="w-full flex items-center justify-between gap-3 px-4 py-3 border-b border-outline-variant hover:bg-surface-hover/50 transition-colors text-left"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-btn bg-primary/8 border border-primary/25 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                <img src="/logo.png" alt={APP_NAME} className="w-7 h-7 object-contain" />
               </div>
-              <ArrowUpRight size={16} className="text-on-surface-variant flex-shrink-0" />
-            </div>
-
-            {/* 卡片2：开发者介绍 */}
-            <div
-              onClick={() => handleOpenUrl(BILIBILI_URL)}
-              className="flex items-center justify-between p-3 rounded-xl bg-surface-container hover:bg-surface-container-high 
-                cursor-pointer transition-all duration-200 hover:shadow-sm hover:scale-[1.01]"
-            >
-              <div className="flex items-center gap-3">
-                <Avatar
-                  alt={t("settings.developer")}
-                  size="md"
-                  className="w-10 h-10 rounded-xl"
-                />
-                <div>
-                  <p className="text-sm font-semibold text-on-surface">
-                    {t("settings.developer")}
-                  </p>
-                  <p className="text-xs text-on-surface-variant">
-                    {t("settings.bilibili")}
-                  </p>
-                </div>
+              <div>
+                <p className="text-[13px] font-medium text-on-surface">{APP_NAME}</p>
+                <p className="text-[11px] text-on-surface-subtle mt-0.5">
+                  {t("settings.version")} {APP_VERSION}
+                </p>
               </div>
-              <ArrowUpRight size={16} className="text-on-surface-variant flex-shrink-0" />
             </div>
+            <ArrowUpRight size={15} className="text-on-surface-subtle flex-shrink-0" />
+          </button>
 
-            {/* 版权信息 */}
-            <div className="pt-2 border-t border-outline-variant space-y-1">
-              <p className="text-xs text-on-surface-variant">
-                {t("settings.copyright")}
-              </p>
-              <p className="text-xs text-on-surface-variant">
-                {t("settings.contact")}: {CONTACT_EMAIL}
-              </p>
-              <p className="text-xs text-on-surface-variant">
-                {t("settings.openSource")}:{" "}
-                <span
-                  className="text-primary cursor-pointer hover:underline"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleOpenUrl(GITHUB_REPO);
-                  }}
-                >
-                  {GITHUB_REPO}
-                </span>
-              </p>
+          <button
+            type="button"
+            onClick={() => handleOpenUrl(BILIBILI_URL)}
+            className="w-full flex items-center justify-between gap-3 px-4 py-3 border-b border-outline-variant hover:bg-surface-hover/50 transition-colors text-left"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-btn bg-primary/8 border border-primary/25 flex items-center justify-center flex-shrink-0">
+                <span className="text-primary font-semibold text-[11px] tracking-tight">1B2T</span>
+              </div>
+              <div>
+                <p className="text-[13px] font-medium text-on-surface">{t("settings.developer")}</p>
+                <p className="text-[11px] text-on-surface-subtle mt-0.5">{t("settings.bilibili")}</p>
+              </div>
             </div>
+            <ArrowUpRight size={15} className="text-on-surface-subtle flex-shrink-0" />
+          </button>
+
+          <div className="px-4 py-3 space-y-1.5">
+            <p className="text-[11px] text-on-surface-subtle">{t("settings.copyright")}</p>
+            <p className="text-[11px] text-on-surface-subtle">
+              {t("settings.contact")}: {CONTACT_EMAIL}
+            </p>
+            <p className="text-[11px] text-on-surface-subtle">
+              {t("settings.openSource")}:{" "}
+              <button
+                type="button"
+                onClick={() => handleOpenUrl(GITHUB_REPO)}
+                className="text-primary hover:underline"
+              >
+                {GITHUB_REPO}
+              </button>
+            </p>
           </div>
-        </Card>
+        </Section>
       </div>
     </PageTransition>
   );

@@ -4,6 +4,8 @@ import { ChevronDown, Check } from "lucide-react";
 interface SelectOption {
   value: string;
   label: string;
+  /** 悬停时展示的补充说明 */
+  description?: string;
   disabled?: boolean;
 }
 
@@ -32,7 +34,6 @@ export function Select({
   const selectedOption = options.find((opt) => opt.value === value);
   const selectableOptions = options.filter((opt) => !opt.disabled);
 
-  // 点击外部关闭下拉
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -43,7 +44,6 @@ export function Select({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // 打开时高亮当前选中项
   useEffect(() => {
     if (open) {
       const index = selectableOptions.findIndex((opt) => opt.value === value);
@@ -53,7 +53,6 @@ export function Select({
     }
   }, [open, value, selectableOptions]);
 
-  // 高亮项滚动到可视区域
   useEffect(() => {
     if (open && highlightedIndex >= 0 && listRef.current) {
       const item = listRef.current.children[highlightedIndex] as HTMLElement | undefined;
@@ -131,12 +130,13 @@ export function Select({
         disabled={disabled}
         onClick={() => !disabled && setOpen(!open)}
         onKeyDown={handleKeyDown}
-        className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-input
-          border outline-none transition-all duration-200 text-left min-h-[40px]
+        title={selectedOption?.description}
+        className={`w-full flex items-center justify-between gap-2 h-8 px-2.5 rounded-input
+          border outline-none transition-colors duration-150 text-[13px] text-left
           ${
             disabled
-              ? "bg-surface-container/50 text-on-surface/40 border-outline/50 cursor-not-allowed"
-              : "bg-surface-container-low text-on-surface border-outline hover:border-on-surface-variant cursor-pointer focus:border-primary focus:ring-1 focus:ring-primary/20"
+              ? "bg-surface-low text-on-surface-subtle border-outline-variant opacity-45 cursor-not-allowed"
+              : "bg-surface-high text-on-surface border-outline-variant hover:border-primary/40 cursor-pointer focus:border-primary focus:ring-1 focus:ring-primary/25"
           }`}
         aria-label={placeholder}
       >
@@ -144,8 +144,8 @@ export function Select({
           {selectedOption ? selectedOption.label : placeholder}
         </span>
         <ChevronDown
-          size={18}
-          className={`text-on-surface-variant transition-transform duration-200 ${
+          size={15}
+          className={`text-on-surface-variant transition-transform duration-150 ${
             open ? "rotate-180" : ""
           }`}
         />
@@ -155,10 +155,10 @@ export function Select({
         <div
           ref={listRef}
           role="listbox"
-          className="absolute z-50 w-full mt-1 max-h-60 overflow-auto rounded-xl
-            bg-surface-container border border-outline/60 shadow-md animate-fade-in"
+          className="absolute z-50 w-full mt-1 max-h-60 overflow-auto rounded-btn
+            bg-surface-highest border border-outline-variant shadow-elevated py-1 animate-fade-in"
         >
-          {options.map((opt, index) => {
+          {options.map((opt) => {
             const isSelected = opt.value === value;
             const isHighlighted = selectableOptions[highlightedIndex]?.value === opt.value;
             const selectableIndex = selectableOptions.findIndex((o) => o.value === opt.value);
@@ -168,17 +168,18 @@ export function Select({
                 key={opt.value}
                 role="option"
                 aria-selected={isSelected}
+                title={opt.description}
                 onClick={() => handleSelect(opt)}
                 onMouseEnter={() =>
                   !opt.disabled && setHighlightedIndex(selectableIndex)
                 }
-                className={`flex items-center justify-between gap-2 px-3 py-2 text-sm cursor-pointer
-                  ${opt.disabled ? "text-on-surface/40 cursor-not-allowed" : "text-on-surface"}
-                  ${isHighlighted && !opt.disabled ? "bg-primary/[0.08]" : ""}
-                  ${isSelected ? "text-primary" : ""}`}
+                className={`flex items-center justify-between gap-2 h-8 px-3 text-[13px] cursor-pointer
+                  ${opt.disabled ? "text-on-surface-subtle cursor-not-allowed" : "text-on-surface"}
+                  ${isHighlighted && !opt.disabled ? "bg-surface-hover" : ""}
+                  ${isSelected ? "bg-primary/8 text-primary font-medium" : ""}`}
               >
                 <span className="truncate">{opt.label}</span>
-                {isSelected && <Check size={16} />}
+                {isSelected && <Check size={14} />}
               </div>
             );
           })}

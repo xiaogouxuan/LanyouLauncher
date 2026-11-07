@@ -3,6 +3,8 @@ import { X, ListTodo, CheckCircle2, AlertCircle, Loader2, Trash2, Zap } from "lu
 import { useTranslation } from "@/i18n";
 import { useTaskStore } from "@/stores/taskStore";
 import { launchService } from "@/services/launchService";
+import { versionService } from "@/services/versionService";
+import { ignoreTaskEvents } from "@/services/taskService";
 import type { Task, TaskStatus } from "@/types/task";
 
 interface TaskPanelProps {
@@ -11,17 +13,17 @@ interface TaskPanelProps {
 }
 
 const statusIcon: Record<TaskStatus, React.ReactNode> = {
-  pending: <span className="w-4 h-4 rounded-full border-2 border-outline/30" />,
+  pending: <span className="w-4 h-4 rounded-full border-2 border-outline-variant" />,
   running: <Loader2 size={16} className="text-primary animate-spin" />,
-  success: <CheckCircle2 size={16} className="text-secondary" />,
-  error: <AlertCircle size={16} className="text-error" />,
+  success: <CheckCircle2 size={16} className="text-success" />,
+  error: <AlertCircle size={16} className="text-danger" />,
 };
 
 const statusTextColor: Record<TaskStatus, string> = {
   pending: "text-on-surface-variant",
   running: "text-primary",
-  success: "text-secondary",
-  error: "text-error",
+  success: "text-success",
+  error: "text-danger",
 };
 
 function formatSpeed(bytesPerSecond: number): string {
@@ -40,51 +42,54 @@ function TaskItem({ task }: { task: Task }) {
       try {
         await launchService.stopGame();
       } catch {
-        // 忽略停止失败
+        // 停止失败不阻断任务清理
       }
       updateTask(task.id, {
         status: "error",
         message: t("task.cancelled"),
         error: t("task.cancelled"),
       });
+    } else if (task.type === "version_download") {
+      // 版本下载：通知后端取消并立即移除任务
+      const versionId = task.id.slice("version_download:".length);
+      await versionService.cancelDownload(versionId);
     } else {
-      // 下载任务暂无后端中止接口，先从列表移除
+      // 其他下载任务没有后端中止接口：忽略后续进度事件后再移除，避免任务被事件重新加回来
+      ignoreTaskEvents(task.id);
       removeTask(task.id);
     }
   };
 
   return (
-    <div className="p-3 rounded-xl bg-surface-container hover:bg-surface-container-high transition-colors">
-      <div className="flex items-start gap-3">
+    <div className="px-4 py-3 border-b border-outline-variant last:border-b-0 hover:bg-surface-hover/50 transition-colors">
+      <div className="flex items-start gap-2.5">
         <div className="mt-0.5">{statusIcon[task.status]}</div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-on-surface truncate">
-            {task.title}
-          </p>
+          <p className="text-[13px] font-medium text-on-surface truncate">{task.title}</p>
           <div className="flex items-center gap-2 mt-0.5">
             {task.message && (
-              <p className={`text-xs truncate ${statusTextColor[task.status]}`}>
+              <p className={`text-[11px] truncate ${statusTextColor[task.status]}`}>
                 {task.message}
               </p>
             )}
             {task.status === "running" && task.speed && task.speed > 0 && (
-              <span className="flex items-center gap-0.5 text-[10px] text-on-surface-variant">
+              <span className="flex items-center gap-0.5 text-[10px] text-on-surface-subtle tabular-nums">
                 <Zap size={10} />
                 {formatSpeed(task.speed)}
               </span>
             )}
           </div>
           {task.status === "running" && task.total && task.total > 0 && (
-            <div className="mt-2">
-              <div className="h-1 w-full bg-surface-container-highest rounded-full overflow-hidden">
+            <div className="mt-2 flex items-center gap-2">
+              <div className="h-1 flex-1 bg-surface-active rounded-full overflow-hidden">
                 <div
                   className="h-full bg-primary rounded-full transition-all duration-300"
                   style={{ width: `${task.progress}%` }}
                 />
               </div>
-              <p className="text-[10px] text-on-surface-variant mt-1">
+              <span className="text-[10px] text-on-surface-subtle tabular-nums">
                 {task.progress}%
-              </p>
+              </span>
             </div>
           )}
         </div>
@@ -92,7 +97,7 @@ function TaskItem({ task }: { task: Task }) {
           <button
             onClick={handleCancel}
             title={t("task.cancel")}
-            className="p-1.5 rounded-full text-on-surface-variant hover:bg-error/10 hover:text-error transition-colors"
+            className="p-1.5 rounded-btn text-on-surface-subtle hover:bg-danger-container hover:text-danger transition-colors"
           >
             <X size={14} />
           </button>
@@ -115,7 +120,7 @@ export function TaskPanel({ open, onClose }: TaskPanelProps) {
     if (open) {
       setVisible(true);
     } else {
-      const timer = setTimeout(() => setVisible(false), 250);
+      const timer = setTimeout(() => setVisible(false), 200);
       return () => clearTimeout(timer);
     }
   }, [open]);
@@ -130,36 +135,30 @@ export function TaskPanel({ open, onClose }: TaskPanelProps) {
 
   if (!visible) return null;
 
-  const activeTasks = tasks.filter((t) => t.status === "running" || t.status === "pending");
-  const completedTasks = tasks.filter((t) => t.status === "success" || t.status === "error");
+  const activeTasks = tasks.filter((task) => task.status === "running" || task.status === "pending");
+  const completedTasks = tasks.filter((task) => task.status === "success" || task.status === "error");
 
   return (
     <div className="absolute inset-0 z-50 flex justify-end overflow-hidden">
-      {/* 背景遮罩 */}
       <div
-        className={`absolute inset-0 transition-opacity duration-250 ${
+        className={`absolute inset-0 bg-scrim transition-opacity duration-200 ${
           open ? "opacity-100" : "opacity-0"
         }`}
-        style={{ backgroundColor: "rgba(var(--md-sys-color-surface-rgb), 0.5)" }}
         onClick={onClose}
       />
 
-      {/* 抽屉 */}
       <div
-        className={`relative w-full max-w-[360px] h-full border-l border-outline-variant shadow-lg flex flex-col rounded-l-2xl transition-transform duration-250 ease-standard ${
-          open ? "translate-x-0" : "translate-x-full"
-        }`}
-        style={{ backgroundColor: "var(--md-sys-color-surface-container-high)" }}
+        className={`relative w-full max-w-[340px] h-full bg-surface-container border-l border-outline-variant
+          flex flex-col transition-transform duration-200 ease-standard ${
+            open ? "translate-x-0" : "translate-x-full"
+          }`}
       >
-        {/* 头部 */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant">
+        <div className="flex items-center justify-between h-12 px-4 border-b border-outline-variant shrink-0">
           <div className="flex items-center gap-2">
-            <ListTodo size={18} className="text-primary" />
-            <h2 className="text-base font-semibold text-on-surface">
-              {t("task.title")}
-            </h2>
+            <ListTodo size={16} className="text-primary" />
+            <h2 className="text-[13px] font-semibold text-on-surface">{t("task.title")}</h2>
             {activeTasks.length > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-primary-container text-on-primary-container text-xs font-medium">
+              <span className="min-w-[18px] h-[18px] px-1 rounded-[4px] bg-primary-muted text-primary text-[11px] font-medium flex items-center justify-center tabular-nums">
                 {activeTasks.length}
               </span>
             )}
@@ -168,36 +167,33 @@ export function TaskPanel({ open, onClose }: TaskPanelProps) {
             {completedTasks.length > 0 && (
               <button
                 onClick={clearCompleted}
-                className="p-1.5 rounded-full text-on-surface-variant hover:bg-on-surface/[0.08] hover:text-on-surface transition-colors"
+                className="p-1.5 rounded-btn text-on-surface-subtle hover:bg-surface-hover hover:text-on-surface transition-colors"
                 title={t("task.clearCompleted")}
               >
-                <Trash2 size={16} />
+                <Trash2 size={15} />
               </button>
             )}
             <button
               onClick={onClose}
-              className="p-1.5 rounded-full text-on-surface-variant hover:bg-on-surface/[0.08] hover:text-on-surface transition-colors"
+              title={t("common.close")}
+              className="p-1.5 rounded-btn text-on-surface-subtle hover:bg-surface-hover hover:text-on-surface transition-colors"
             >
-              <X size={18} />
+              <X size={17} />
             </button>
           </div>
         </div>
 
-        {/* 任务列表 */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto">
           {tasks.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-on-surface-variant gap-3">
-              <ListTodo size={40} className="opacity-30" />
-              <p className="text-sm">{t("task.empty")}</p>
+            <div className="h-full flex flex-col items-center justify-center text-on-surface-subtle gap-3">
+              <ListTodo size={36} className="opacity-25" />
+              <p className="text-[13px]">{t("task.empty")}</p>
             </div>
           ) : (
             <>
               {activeTasks.map((task) => (
                 <TaskItem key={task.id} task={task} />
               ))}
-              {completedTasks.length > 0 && activeTasks.length > 0 && (
-                <div className="py-2 border-t border-outline-variant" />
-              )}
               {completedTasks.map((task) => (
                 <TaskItem key={task.id} task={task} />
               ))}

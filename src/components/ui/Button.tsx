@@ -1,14 +1,18 @@
 import { type ButtonHTMLAttributes, type ReactNode } from "react";
 
+/*
+ * 兼容旧调用方的变体别名：primary 等价 filled，secondary 等价 tonal，
+ * ghost 等价 text。新代码应直接使用标准变体名。
+ */
 type ButtonVariant =
   | "filled"
-  | "primary" // 兼容旧版
+  | "primary"
   | "tonal"
-  | "secondary" // 兼容旧版 -> tonal
+  | "secondary"
   | "elevated"
   | "outlined"
   | "text"
-  | "ghost" // 兼容旧版 -> text
+  | "ghost"
   | "danger";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -28,34 +32,31 @@ function normalizeVariant(variant: ButtonVariant): ButtonVariant {
 }
 
 const baseStyles =
-  "inline-flex items-center justify-center gap-2 font-medium relative overflow-hidden transition-all duration-200 ease-standard disabled:opacity-40 disabled:cursor-not-allowed";
+  "inline-flex items-center justify-center gap-1.5 font-medium whitespace-nowrap shrink-0 select-none rounded-btn transition-colors duration-150 disabled:opacity-45 disabled:pointer-events-none active:brightness-95";
 
 const variantStyles: Record<string, string> = {
   filled:
-    "bg-primary text-on-primary hover:shadow-md active:shadow-sm before:absolute before:inset-0 before:bg-on-primary/0 hover:before:bg-on-primary/[0.08] active:before:bg-on-primary/[0.12]",
+    "bg-primary text-white border border-primary hover:brightness-110",
   tonal:
-    "bg-primary-container text-on-primary-container hover:shadow-sm active:shadow-none before:absolute before:inset-0 before:bg-on-primary-container/0 hover:before:bg-on-primary-container/[0.08] active:before:bg-on-primary-container/[0.12]",
+    "bg-primary/8 text-primary border border-primary/25 hover:bg-primary/14",
   elevated:
-    "bg-surface-container-low text-primary shadow-md hover:shadow-lg active:shadow-sm before:absolute before:inset-0 before:bg-primary/0 hover:before:bg-primary/[0.05] active:before:bg-primary/[0.08]",
+    "bg-surface-high text-on-surface border border-outline-variant hover:bg-surface-hover",
   outlined:
-    "bg-transparent text-primary border border-outline hover:bg-primary/[0.05] active:bg-primary/[0.08]",
+    "bg-transparent text-on-surface border border-outline hover:bg-surface-hover hover:border-primary/50",
   text:
-    "bg-transparent text-primary hover:bg-primary/[0.05] active:bg-primary/[0.08]",
+    "bg-surface-high/85 text-on-surface border border-primary/20 backdrop-blur-sm hover:bg-surface-high hover:border-primary/35",
   danger:
-    "bg-error text-on-error hover:shadow-md active:shadow-sm before:absolute before:inset-0 before:bg-on-error/0 hover:before:bg-on-error/[0.08] active:before:bg-on-error/[0.12]",
+    "bg-danger text-white border border-danger hover:brightness-110",
 };
 
 const sizeStyles: Record<string, string> = {
-  sm: "px-3 py-1.5 text-xs rounded-btn min-h-[32px]",
-  md: "px-4 py-2 text-sm rounded-btn min-h-[40px]",
-  lg: "px-6 py-3 text-base rounded-btn min-h-[48px]",
+  sm: "h-7 px-2.5 text-xs",
+  md: "h-8 px-3 text-[12.5px]",
+  lg: "h-9 px-3.5 text-[13px]",
 };
 
-const fabStyles =
-  "w-14 h-14 rounded-2xl shadow-md hover:shadow-lg active:shadow-sm p-0 before:absolute before:inset-0 before:rounded-2xl before:bg-on-primary/0 hover:before:bg-on-primary/[0.08] active:before:bg-on-primary/[0.12]";
-
-const extendedFabStyles =
-  "px-5 h-14 rounded-btn shadow-md hover:shadow-lg active:shadow-sm before:absolute before:inset-0 before:rounded-btn before:bg-on-primary/0 hover:before:bg-on-primary/[0.08] active:before:bg-on-primary/[0.12]";
+const fabStyles = "w-9 h-9 p-0";
+const extendedFabStyles = "h-9 px-3.5 text-[13px]";
 
 export function Button({
   variant = "filled",
@@ -73,25 +74,14 @@ export function Button({
   const classes = [
     baseStyles,
     fab ? fabStyles : extendedFab ? extendedFabStyles : sizeStyles[size],
-    fab || extendedFab
-      ? variantStyles.filled
-      : variantStyles[normalized],
-    disabled || loading ? "pointer-events-none" : "cursor-pointer",
+    variantStyles[normalized],
     className,
   ].join(" ");
 
   return (
-    <button
-      className={classes}
-      disabled={disabled || loading}
-      {...props}
-    >
+    <button className={classes} disabled={disabled || loading} {...props}>
       {loading && (
-        <svg
-          className="animate-spin h-4 w-4 relative z-10"
-          viewBox="0 0 24 24"
-          fill="none"
-        >
+        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
           <circle
             className="opacity-25"
             cx="12"
@@ -107,7 +97,9 @@ export function Button({
           />
         </svg>
       )}
-      <span className="relative z-10">{children}</span>
+      <span className="inline-flex items-center justify-center gap-1.5">
+        {children}
+      </span>
     </button>
   );
 }

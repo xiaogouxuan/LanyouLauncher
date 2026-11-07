@@ -26,11 +26,29 @@ export const settingsService = {
     return invoke<[string, string]>("select_java_for_version", { versionId });
   },
 
+  async getJavaVersion(javaPath: string): Promise<string> {
+    return invoke<string>("get_java_version", { javaPath });
+  },
+
   async getSystemInfo(): Promise<SystemInfo> {
     return invoke<string>("get_system_info").then((json) => JSON.parse(json));
   },
 
   async selectBackgroundImage(): Promise<string | null> {
     return invoke<string | null>("select_background_image");
+  },
+
+  async downloadJava(major: number): Promise<string> {
+    return invoke<string>("download_java", { major });
+  },
+
+  /** 在系统文件管理器中打开本地文件或目录 */
+  async openPath(path: string): Promise<void> {
+    return invoke("open_path", { path });
+  },
+
+  /** 在文件管理器中打开游戏目录 */
+  async openGameDir(gameDir?: string): Promise<void> {
+    return invoke("open_game_dir", { gameDir });
   },
 };

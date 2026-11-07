@@ -1,12 +1,17 @@
 use crate::i18n::I18nError;
 use crate::i18n_err;
 use crate::models::settings::DownloadSource;
-use crate::models::version::{LoaderType, VersionInfo, VersionType};
+use crate::models::version::{LoaderType, LoaderVersionInfo, VersionInfo, VersionType};
 use crate::state::app_state::AppState;
 use chrono::Datelike;
+use std::fs;
+use std::io::{Seek, Write};
 use std::path::Path;
 use tauri::State;
 use tauri_plugin_dialog::DialogExt;
+use zip::write::FileOptions;
+use zip::CompressionMethod;
+use zip::ZipWriter;
 
 /// 已知的 Minecraft 愚人节版本 ID（参考 PCL-CE 与 HMCL）
 const APRIL_FOOLS_IDS: &[&str] = &[
@@ -68,6 +73,11 @@ fn detect_loader_from_json(json: &serde_json::Value) -> Option<LoaderType> {
     }
 
     None
+}
+
+/// 判断一个版本目录是否为 Mod 加载器生成的派生版本（如 fabric-loader-0.19.2-1.14.4）
+fn is_loader_derived_version(json: &serde_json::Value) -> bool {
+    json.get("inheritsFrom").and_then(|v| v.as_str()).is_some() && detect_loader_from_json(json).is_some()
 }
 
 /// 判断发布日期是否在愚人节（参考 PCL-CE，将 UTC 时间加 2 小时后判断）
@@ -218,7 +228,9 @@ pub async fn get_manifest(
             install_time: None,
             is_isolated: false,
             game_dir: None,
+            java_path: None,
             lore: classified.lore,
+            loader_history: std::collections::HashMap::new(),
         }
     }).collect();
     Ok(versions)
@@ -247,9 +259,18 @@ pub async fn get_installed_versions(
                 let version_json = path.join(format!("{}.json", dir_name));
                 if version_json.exists() {
                     // 读取 version.json 获取真实版本类型、发布时间、加载器类型
-                    let (version_type, release_time, lore, loader) = std::fs::read_to_string(&version_json)
+                    let parsed_json = std::fs::read_to_string(&version_json)
                         .ok()
-                        .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+                        .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok());
+
+                    // 过滤掉 Mod 加载器生成的派生版本目录，避免列表里出现 fabric-loader-xxx 等条目
+                    if let Some(ref json) = parsed_json {
+                        if is_loader_derived_version(json) {
+                            continue;
+                        }
+                    }
+
+                    let (version_type, release_time, lore, loader) = parsed_json
                         .map(|json| {
                             let vtype = json.get("type").and_then(|t| t.as_str()).unwrap_or("release");
                             let rtime = json.get("releaseTime").and_then(|t| t.as_str()).unwrap_or("").to_string();
@@ -272,6 +293,8 @@ pub async fn get_installed_versions(
 
                     // 读取启动器元数据（版本隔离、自定义游戏目录）
                     let meta = crate::services::version::meta::read_version_meta(&state.minecraft_dir, &dir_name);
+                    let loader_history = meta.loader_history.clone();
+
                     let game_dir = if meta.is_isolated {
                         if meta.game_dir.is_empty() {
                             Some(
@@ -286,6 +309,12 @@ pub async fn get_installed_versions(
                         None
                     };
 
+                    let java_path = if meta.java_path.is_empty() {
+                        None
+                    } else {
+                        Some(meta.java_path.clone())
+                    };
+
                     versions.push(VersionInfo {
                         id: dir_name,
                         version_type,
@@ -294,7 +323,9 @@ pub async fn get_installed_versions(
                         install_time,
                         is_isolated: meta.is_isolated,
                         game_dir,
+                        java_path,
                         lore,
+                        loader_history,
                     });
                 }
             }
@@ -322,28 +353,88 @@ pub async fn download_version(
     .await
 }
 
+/// 取消正在进行的版本下载
+#[tauri::command]
+pub async fn cancel_version_download(
+    state: State<'_, AppState>,
+    version_id: String,
+) -> Result<bool, I18nError> {
+    Ok(state.cancel_download(&version_id))
+}
+
+/// 获取指定 Minecraft 版本可用的加载器版本列表
+#[tauri::command]
+pub async fn get_loader_versions(
+    state: State<'_, AppState>,
+    version_id: String,
+    loader: String,
+) -> Result<Vec<LoaderVersionInfo>, I18nError> {
+    let loader_type = parse_loader_type(&loader)?;
+
+    crate::services::version::loader::get_loader_versions(
+        &state,
+        &version_id,
+        &loader_type,
+    )
+    .await
+}
+
 /// 安装 Mod 加载器
 #[tauri::command]
 pub async fn install_loader(
     state: State<'_, AppState>,
     version_id: String,
     loader: String,
+    loader_version: Option<String>,
 ) -> Result<(), I18nError> {
-    let loader_type = match loader.as_str() {
-        "Forge" => LoaderType::Forge,
-        "Fabric" => LoaderType::Fabric,
-        "NeoForge" => LoaderType::NeoForge,
-        "Quilt" => LoaderType::Quilt,
-        _ => return Err(i18n_err!("errors.version.unknownLoader", loader)),
-    };
+    let loader_type = parse_loader_type(&loader)?;
 
-    crate::services::version::loader::install_loader(
+    // 删除该加载器在此 Minecraft 版本上已生成的旧版本目录
+    crate::services::version::loader::remove_existing_loader_versions(
+        &state.minecraft_dir,
+        &version_id,
+        &loader_type,
+    )?;
+
+    let installed_version = crate::services::version::loader::install_loader(
         &state,
         &version_id,
         &loader_type,
+        loader_version.as_deref(),
         &state.minecraft_dir,
     )
-    .await
+    .await?;
+
+    // 记录加载器版本历史到版本元数据
+    let mut meta = crate::services::version::meta::read_version_meta(&state.minecraft_dir, &version_id);
+    meta.loader_history.insert(loader_type.clone(), installed_version);
+    crate::services::version::meta::save_version_meta(&state.minecraft_dir, &version_id, &meta)
+        .map_err(|e| i18n_err!("errors.settings.writeFileFailed", e))?;
+
+    Ok(())
+}
+
+/// 在文件管理器中打开版本目录
+#[tauri::command]
+pub async fn open_version_dir(
+    state: State<'_, AppState>,
+    version_id: String,
+) -> Result<(), I18nError> {
+    let version_dir = crate::utils::paths::get_versions_dir(&state.minecraft_dir).join(&version_id);
+    if !version_dir.exists() {
+        return Err(i18n_err!("errors.version.notFound", version_id));
+    }
+    open::that(&version_dir).map_err(|e| i18n_err!("errors.system.openPathFailed", e))
+}
+
+fn parse_loader_type(loader: &str) -> Result<LoaderType, I18nError> {
+    match loader {
+        "Forge" => Ok(LoaderType::Forge),
+        "Fabric" => Ok(LoaderType::Fabric),
+        "NeoForge" => Ok(LoaderType::NeoForge),
+        "Quilt" => Ok(LoaderType::Quilt),
+        _ => Err(i18n_err!("errors.version.unknownLoader", loader)),
+    }
 }
 
 /// 删除版本
@@ -361,6 +452,88 @@ pub async fn delete_version(
 
     std::fs::remove_dir_all(&version_dir)
         .map_err(|e| i18n_err!("errors.version.deleteFailed", e))?;
+
+    Ok(())
+}
+
+/// 清除版本的自定义游戏目录
+#[tauri::command]
+pub async fn clear_version_game_dir(
+    state: State<'_, AppState>,
+    version_id: String,
+) -> Result<(), I18nError> {
+    let versions_dir = crate::utils::paths::get_versions_dir(&state.minecraft_dir);
+    if !versions_dir.join(&version_id).exists() {
+        return Err(i18n_err!("errors.version.notFound", version_id));
+    }
+
+    let mut meta = crate::services::version::meta::read_version_meta(&state.minecraft_dir, &version_id);
+    meta.game_dir = String::new();
+    crate::services::version::meta::save_version_meta(&state.minecraft_dir, &version_id, &meta)
+        .map_err(|e| i18n_err!("errors.settings.writeFileFailed", e))?;
+
+    Ok(())
+}
+
+/// 选择版本独立 Java 可执行文件
+#[tauri::command]
+pub async fn select_version_java(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    version_id: String,
+) -> Result<Option<String>, I18nError> {
+    let versions_dir = crate::utils::paths::get_versions_dir(&state.minecraft_dir);
+    if !versions_dir.join(&version_id).exists() {
+        return Err(i18n_err!("errors.version.notFound", version_id));
+    }
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
+    let tx = std::sync::Mutex::new(Some(tx));
+
+    app.dialog()
+        .file()
+        .pick_file(move |file_path| {
+            if let Ok(mut lock) = tx.lock() {
+                if let Some(sender) = lock.take() {
+                    let path_str = file_path.map(|p| p.to_string());
+                    let _ = sender.send(path_str);
+                }
+            }
+        });
+
+    let path_opt = rx
+        .await
+        .map_err(|_| i18n_err!("errors.settings.readFileFailed", "dialog closed"))?;
+
+    if let Some(ref path) = path_opt {
+        if !Path::new(path).is_file() {
+            return Ok(None);
+        }
+
+        let mut meta = crate::services::version::meta::read_version_meta(&state.minecraft_dir, &version_id);
+        meta.java_path = path.clone();
+        crate::services::version::meta::save_version_meta(&state.minecraft_dir, &version_id, &meta)
+            .map_err(|e| i18n_err!("errors.settings.writeFileFailed", e))?;
+    }
+
+    Ok(path_opt)
+}
+
+/// 清除版本独立 Java 设置，恢复使用全局自动选择
+#[tauri::command]
+pub async fn clear_version_java(
+    state: State<'_, AppState>,
+    version_id: String,
+) -> Result<(), I18nError> {
+    let versions_dir = crate::utils::paths::get_versions_dir(&state.minecraft_dir);
+    if !versions_dir.join(&version_id).exists() {
+        return Err(i18n_err!("errors.version.notFound", version_id));
+    }
+
+    let mut meta = crate::services::version::meta::read_version_meta(&state.minecraft_dir, &version_id);
+    meta.java_path = String::new();
+    crate::services::version::meta::save_version_meta(&state.minecraft_dir, &version_id, &meta)
+        .map_err(|e| i18n_err!("errors.settings.writeFileFailed", e))?;
 
     Ok(())
 }
@@ -439,21 +612,178 @@ pub async fn select_version_game_dir(
     Ok(path_opt)
 }
 
-/// 清除版本的自定义游戏目录，恢复为默认隔离目录
+fn version_export_key(key: &str) -> Option<&'static str> {
+    match key {
+        "manifest" => Some("manifest.json"),
+        "versionJson" => Some("version.json"),
+        "assets" => Some("assets"),
+        "libraries" => Some("libraries"),
+        "mods" => Some("mods"),
+        "saves" => Some("saves"),
+        "options" => Some("options.txt"),
+        "resourcepacks" => Some("resourcepacks"),
+        "shaderpacks" => Some("shaderpacks"),
+        _ => None,
+    }
+}
+
+fn should_export_file(relative: &Path, key: &str) -> bool {
+    match key {
+        "versionJson" => relative.extension().and_then(|ext| ext.to_str()) == Some("json"),
+        "options" => relative.file_name().and_then(|name| name.to_str()) == Some("options.txt"),
+        // manifest 在主循环中单独处理，不通过目录扫描导出
+        "manifest" => false,
+        _ => false,
+    }
+}
+
+fn add_directory_to_zip<W: Write + Seek>(
+    zip: &mut ZipWriter<W>,
+    directory: &Path,
+    base: &Path,
+    root_name: &str,
+) -> Result<(), std::io::Error> {
+    let options: FileOptions<'_, ()> = FileOptions::default().compression_method(CompressionMethod::Deflated);
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let path = entry.path();
+        let relative = path.strip_prefix(base).unwrap_or(&path);
+        let entry_name = format!("{}/{}", root_name, relative.to_string_lossy().replace('\\', "/"));
+        if path.is_dir() {
+            zip.add_directory(format!("{}/", entry_name), options)?;
+            add_directory_to_zip(zip, &path, base, root_name)?;
+        } else {
+            zip.start_file(entry_name, options)?;
+            let mut file = fs::File::open(&path)?;
+            std::io::copy(&mut file, zip)?;
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
-pub async fn clear_version_game_dir(
+pub async fn export_version_pack(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     version_id: String,
-) -> Result<(), I18nError> {
+    options: Vec<serde_json::Value>,
+) -> Result<Option<String>, I18nError> {
+    use crate::services::version::meta::{read_version_meta, resolve_version_game_dir};
+
     let versions_dir = crate::utils::paths::get_versions_dir(&state.minecraft_dir);
-    if !versions_dir.join(&version_id).exists() {
+    let version_dir = versions_dir.join(&version_id);
+    if !version_dir.exists() {
         return Err(i18n_err!("errors.version.notFound", version_id));
     }
 
-    let mut meta = crate::services::version::meta::read_version_meta(&state.minecraft_dir, &version_id);
-    meta.game_dir = String::new();
-    crate::services::version::meta::save_version_meta(&state.minecraft_dir, &version_id, &meta)
-        .map_err(|e| i18n_err!("errors.settings.writeFileFailed", e))?;
+    let selected_keys: Vec<String> = options
+        .into_iter()
+        .filter_map(|option| option.get("key").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .collect();
+    if selected_keys.is_empty() {
+        return Ok(None);
+    }
 
-    Ok(())
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
+    let tx = std::sync::Mutex::new(Some(tx));
+    let default_name = format!("{}.zip", version_id);
+
+    app.dialog().file().set_file_name(&default_name).save_file(move |path| {
+        if let Ok(mut lock) = tx.lock() {
+            if let Some(sender) = lock.take() {
+                let _ = sender.send(path.map(|p| p.to_string()));
+            }
+        }
+    });
+
+    let export_path = rx
+        .await
+        .map_err(|_| i18n_err!("errors.settings.readFileFailed", "dialog closed"))?;
+    let Some(export_path) = export_path else {
+        return Ok(None);
+    };
+
+    let meta = read_version_meta(&state.minecraft_dir, &version_id);
+    let game_dir = resolve_version_game_dir(&state.minecraft_dir, &version_id, &meta);
+
+    let mut manifest = serde_json::json!({
+        "format": 1,
+        "launcher": "LanyouLauncher",
+        "versionId": version_id,
+        "contents": selected_keys,
+        "isolated": meta.is_isolated,
+        "gameDir": meta.game_dir,
+    });
+
+    if let Ok(version_json) = fs::read_to_string(version_dir.join(format!("{}.json", version_id))) {
+        if let Ok(version_value) = serde_json::from_str::<serde_json::Value>(&version_json) {
+            manifest["gameVersion"] = version_value.get("id").cloned().unwrap_or(serde_json::Value::Null);
+            manifest["mainClass"] = version_value.get("mainClass").cloned().unwrap_or(serde_json::Value::Null);
+            if let Some(loader) = detect_loader_from_json(&version_value) {
+                manifest["loader"] = serde_json::Value::String(format!("{:?}", loader));
+            }
+        }
+    }
+
+    let file = fs::File::create(&export_path).map_err(|e| i18n_err!("errors.file.createDirFailed", e))?;
+    let mut zip = ZipWriter::new(file);
+    let options = FileOptions::<'_, ()>::default().compression_method(CompressionMethod::Deflated);
+
+    for key in manifest["contents"].as_array().into_iter().flatten().filter_map(|v| v.as_str()) {
+        if key == "manifest" {
+            zip.start_file(format!("{}/manifest.json", version_id), options)
+                .map_err(|e| i18n_err!("errors.version.writeManifestFailed", e))?;
+            zip.write_all(serde_json::to_string_pretty(&manifest).unwrap_or_default().as_bytes())
+                .map_err(|e| i18n_err!("errors.version.writeManifestFailed", e))?;
+            continue;
+        }
+
+        if let Some(folder_name) = version_export_key(key) {
+            if key == "versionJson" {
+                if let Ok(entries) = fs::read_dir(&version_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_file() && should_export_file(&path, key) {
+                            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+                            zip.start_file(format!("{}/{}", version_id, file_name), options)
+                                .map_err(|e| i18n_err!("errors.version.addExportFileFailed", e))?;
+                            let mut file = fs::File::open(&path).map_err(|e| i18n_err!("errors.version.openExportFileFailed", e))?;
+                            std::io::copy(&mut file, &mut zip).map_err(|e| i18n_err!("errors.version.copyExportFileFailed", e))?;
+                        }
+                    }
+                }
+                continue;
+            }
+
+            let source = match key {
+                "assets" => Some(state.minecraft_dir.join("assets")),
+                "libraries" => Some(state.minecraft_dir.join("libraries")),
+                "mods" => Some(crate::utils::paths::get_mods_dir_for_version(&state.minecraft_dir, Some(&version_id))),
+                "saves" => Some(game_dir.join("saves")),
+                "options" => Some(game_dir.join("options.txt")),
+                "resourcepacks" => Some(game_dir.join("resourcepacks")),
+                "shaderpacks" => Some(game_dir.join("shaderpacks")),
+                _ => None,
+            };
+            if let Some(source) = source {
+                if source.exists() {
+                    if source.is_dir() {
+                        add_directory_to_zip(&mut zip, &source, &source, &format!("{}/{}", version_id, folder_name))
+                            .map_err(|e| i18n_err!("errors.file.createDirFailed", e))?;
+                    } else {
+                        let entry_name = format!("{}/{}", version_id, folder_name);
+                        zip.start_file(entry_name, options)
+                            .map_err(|e| i18n_err!("errors.file.createDirFailed", e))?;
+                        let mut file = fs::File::open(&source).map_err(|e| i18n_err!("errors.file.createDirFailed", e))?;
+                        std::io::copy(&mut file, &mut zip).map_err(|e| i18n_err!("errors.file.createDirFailed", e))?;
+                    }
+                }
+            }
+        }
+    }
+
+    zip.finish().map_err(|e| i18n_err!("errors.file.createDirFailed", e))?;
+    Ok(Some(export_path))
 }
+
+

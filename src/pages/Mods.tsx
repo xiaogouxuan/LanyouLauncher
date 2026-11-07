@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Download, Puzzle, Trash2, ExternalLink, RefreshCw, Power, PowerOff, Gamepad2 } from "lucide-react";
+import { Search, Puzzle, Trash2, ExternalLink, RefreshCw, Power, PowerOff, ListChecks, Download, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -8,12 +8,16 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { PageTransition } from "@/components/common/PageTransition";
 import { EmptyState } from "@/components/common/EmptyState";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { VersionIcon } from "@/components/game/VersionIcon";
+import { InstanceBadge } from "@/components/mod/InstanceBadge";
+import { ModVersionSelector } from "@/components/mod/ModVersionSelector";
 import { useTranslation } from "@/i18n";
 import { useToast } from "@/components/ui/Toast";
 import { useVersionStore } from "@/stores/versionStore";
 import { modService } from "@/services/modService";
 import { formatError } from "@/utils/format";
-import type { ModInfo, ModSource } from "@/types/mod";
+import type { ModInfo, ModSource, ModVersionInfo } from "@/types/mod";
 import type { LoaderType } from "@/types/version";
 
 const GAME_VERSIONS = [
@@ -54,12 +58,43 @@ export default function Mods() {
   const [searching, setSearching] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  // 从版本 ID 推断游戏版本（如 fabric-loader-0.19.3-1.16.5 → 1.16.5）
+  // 已安装 Mod 更新检查
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [updates, setUpdates] = useState<Record<string, ModVersionInfo>>({});
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  // 版本选择器
+  const [selectedMod, setSelectedMod] = useState<ModInfo | null>(null);
+  // 删除确认
+  const [deleteTarget, setDeleteTarget] = useState<ModInfo | null>(null);
+
+  // 从版本 ID 推断游戏版本（如 fabric-loader-0.19.3-1.16.5 → 1.16.5，1.20.1-forge-47.2.0 → 1.20.1）
   const extractGameVersion = (versionId: string): string => {
-    // 匹配末尾的 Minecraft 版本号
-    const match = versionId.match(/(\d+\.\d+(\.\d+)?)$/);
+    const match = versionId.match(/(1\.\d+(?:\.\d+)?)/);
     return match ? match[0] : versionId;
   };
+
+  // 从版本 ID 推断加载器
+  const extractLoader = (versionId: string): LoaderType | undefined => {
+    const lower = versionId.toLowerCase();
+    if (lower.includes("fabric")) return "Fabric";
+    if (lower.includes("neoforge")) return "NeoForge";
+    if (lower.includes("forge")) return "Forge";
+    if (lower.includes("quilt")) return "Quilt";
+    return undefined;
+  };
+
+  // 当前目标版本对应的游戏版本与加载器
+  const currentGameVersion = useMemo(() => {
+    if (!targetVersion) return undefined;
+    return extractGameVersion(targetVersion);
+  }, [targetVersion]);
+
+  const currentLoader = useMemo(() => {
+    if (!targetVersion) return undefined;
+    const info = installedVersions.find((v) => v.id === targetVersion);
+    return info?.loader || extractLoader(targetVersion);
+  }, [targetVersion, installedVersions]);
 
   // 当已安装版本变化时，默认选中第一个
   useEffect(() => {
@@ -77,9 +112,7 @@ export default function Mods() {
     const gameVersion = extractGameVersion(info.id);
     setVersionFilter(gameVersion);
 
-    const loader = info.loader || (info.id.toLowerCase().includes("fabric") ? "Fabric" :
-                    info.id.toLowerCase().includes("forge") ? "Forge" :
-                    info.id.toLowerCase().includes("quilt") ? "Quilt" : null);
+    const loader = info.loader || extractLoader(info.id);
     if (loader) {
       setLoaderFilter(loader);
     }
@@ -108,14 +141,13 @@ export default function Mods() {
   // 加载推荐 Mod
   const loadRecommendations = useCallback(async () => {
     setSearching(true);
-    setSearchResults([]);
     try {
       const version = versionFilter === "all" ? undefined : versionFilter;
       const loader = loaderFilter === "all" ? undefined : loaderFilter;
 
       let results: ModInfo[] = [];
       if (sourceFilter === "all" || sourceFilter === "Modrinth") {
-        const modrinth = await modService.getRecommendations();
+        const modrinth = await modService.searchModrinth("", version, loader);
         results = results.concat(modrinth);
       }
       if (sourceFilter === "all" || sourceFilter === "CurseForge") {
@@ -185,16 +217,47 @@ export default function Mods() {
     }
   };
 
-  // 下载 Mod
-  const handleDownload = async (mod: ModInfo) => {
-    if (!targetVersion) {
-      showToast("error", t("home.selectVersion"));
-      return;
-    }
-    setDownloadingId(mod.id);
+  // 打开版本选择器
+  const handleSelectVersion = (mod: ModInfo) => {
+    setSelectedMod(mod);
+  };
+
+  // 安装选中的 Mod 版本到当前版本
+  const handleInstallVersion = async (version: ModVersionInfo) => {
+    if (!targetVersion || !selectedMod) return;
+    setDownloadingId(selectedMod.id);
     try {
-      await modService.downloadMod(mod.id, mod.source, mod.version_id || undefined, targetVersion);
-      showToast("success", t("mod.downloadSuccess", { name: mod.name }));
+      await modService.downloadMod(
+        selectedMod.project_id ?? selectedMod.id,
+        selectedMod.source,
+        version.version_id,
+        targetVersion,
+      );
+      showToast("success", t("mod.downloadSuccess", { name: selectedMod.name }));
+      setSelectedMod(null);
+      if (activeTab === "installed") {
+        loadInstalled();
+      }
+    } catch (error) {
+      showToast("error", formatError(error));
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  // 下载 Mod 到本地
+  const handleDownloadLocal = async (version: ModVersionInfo) => {
+    if (!selectedMod) return;
+    setDownloadingId(selectedMod.id);
+    try {
+      const path = await modService.downloadModToLocal(
+        selectedMod.project_id ?? selectedMod.id,
+        selectedMod.source,
+        version.version_id,
+        version.file_name,
+      );
+      showToast("success", t("mod.downloadToLocalSuccess", { path }));
+      setSelectedMod(null);
     } catch (error) {
       showToast("error", formatError(error));
     } finally {
@@ -213,16 +276,83 @@ export default function Mods() {
     }
   };
 
-  // 删除 Mod
+  // 删除 Mod（由确认弹窗触发）
   const handleDelete = async (mod: ModInfo) => {
     if (!targetVersion) return;
-    if (!confirm(t("mod.deleteConfirm"))) return;
     try {
       await modService.deleteMod(mod.id, targetVersion);
       loadInstalled();
       showToast("success", t("common.success"));
     } catch (error) {
       showToast("error", formatError(error));
+    }
+  };
+
+  // 打开当前实例的 Mods 目录
+  const handleOpenModsDir = async () => {
+    try {
+      await modService.openModsDir(targetVersion || undefined);
+    } catch (error) {
+      showToast("error", formatError(error));
+    }
+  };
+
+  // 检查已安装 Mod 的可用更新
+  const handleCheckUpdates = async () => {
+    if (!targetVersion) return;
+    setCheckingUpdates(true);
+    const found: Record<string, ModVersionInfo> = {};
+    try {
+      for (const mod of installedMods) {
+        if (!mod.project_id || !mod.version_id) continue;
+        try {
+          const versions = await modService.getModVersions(
+            mod.project_id,
+            mod.source,
+            currentGameVersion,
+            currentLoader,
+          );
+          const compatible = versions.filter((v) => {
+            const versionOk = !currentGameVersion || v.game_versions.includes(currentGameVersion);
+            const loaderOk = !currentLoader || v.loaders.includes(currentLoader);
+            return versionOk && loaderOk;
+          });
+          const latest = compatible[0] ?? versions[0];
+          if (latest && latest.version_id !== mod.version_id) {
+            found[mod.id] = latest;
+          }
+        } catch {
+          // 单个 Mod 查询失败不影响整体检查
+        }
+      }
+      setUpdates(found);
+      const count = Object.keys(found).length;
+      showToast(
+        count > 0 ? "info" : "success",
+        count > 0 ? t("mod.updatesFound", { count: String(count) }) : t("mod.noUpdates"),
+      );
+    } finally {
+      setCheckingUpdates(false);
+    }
+  };
+
+  // 应用更新
+  const handleApplyUpdate = async (mod: ModInfo, version: ModVersionInfo) => {
+    if (!targetVersion || !mod.project_id) return;
+    setUpdatingId(mod.id);
+    try {
+      await modService.downloadMod(mod.project_id, mod.source, version.version_id, targetVersion);
+      showToast("success", t("mod.updateSuccess", { name: mod.name }));
+      setUpdates((current) => {
+        const next = { ...current };
+        delete next[mod.id];
+        return next;
+      });
+      await loadInstalled();
+    } catch (error) {
+      showToast("error", formatError(error));
+    } finally {
+      setUpdatingId(null);
     }
   };
 
@@ -247,41 +377,62 @@ export default function Mods() {
     ...LOADERS.map((l) => ({ value: l, label: t(`version.${l.toLowerCase()}`) })),
   ];
 
-  const TargetVersionSelector = () => (
-    <div className="flex items-center gap-2">
-      <Gamepad2 size={16} className="text-on-surface-variant" />
-      <span className="text-sm text-on-surface-variant">{t("home.currentVersion")}</span>
-      <Select
-        options={versionOptions}
-        value={targetVersion}
-        onChange={setTargetVersion}
-        className="w-48"
-      />
-    </div>
-  );
-
   return (
     <PageTransition>
-      <div className="p-6 space-y-4 h-full flex flex-col">
-        <h1 className="text-2xl font-bold text-on-surface">{t("mod.title")}</h1>
-
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex gap-2">
-            <Button variant={activeTab === "installed" ? "filled" : "tonal"} size="sm" onClick={() => setActiveTab("installed")}>
-              {t("mod.installed")}
-            </Button>
-            <Button variant={activeTab === "explore" ? "filled" : "tonal"} size="sm" onClick={() => setActiveTab("explore")}>
-              {t("mod.explore")}
-            </Button>
+      <div className="p-5 space-y-3.5 h-full flex flex-col">
+        <div className="flex items-center justify-between gap-3 shrink-0 pb-3 border-b border-outline-variant">
+          <div>
+            <h1 className="wallpaper-text text-[18px] font-semibold tracking-tight">{t("mod.title")}</h1>
           </div>
-          <TargetVersionSelector />
+          <div className="segmented">
+            <button
+              className={`segmented-item ${activeTab === "installed" ? "segmented-item-active" : "segmented-item-idle"}`}
+              onClick={() => setActiveTab("installed")}
+            >
+              {t("mod.installed")}
+            </button>
+            <button
+              className={`segmented-item ${activeTab === "explore" ? "segmented-item-active" : "segmented-item-idle"}`}
+              onClick={() => setActiveTab("explore")}
+            >
+              {t("mod.explore")}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-[4px] bg-primary/10 flex items-center justify-center">
+              <VersionIcon size={16} />
+            </span>
+            <span className="text-[12px] font-medium text-on-surface-variant">{t("home.currentVersion")}</span>
+            <Select
+              options={versionOptions}
+              value={targetVersion}
+              onChange={setTargetVersion}
+              className="w-48"
+            />
+          </div>
         </div>
 
         {activeTab === "installed" ? (
           <div className="space-y-3 flex-1 flex flex-col overflow-hidden">
-            <div className="flex justify-end">
-              <Button variant="tonal" size="sm" onClick={loadInstalled} disabled={loadingInstalled || !targetVersion}>
-                <RefreshCw size={14} className={`mr-1 ${loadingInstalled ? "animate-spin" : ""}`} />
+            <div className="flex justify-end gap-2">
+              <Button variant="text" size="sm" onClick={handleOpenModsDir} disabled={!targetVersion}>
+                <FolderOpen size={14} />
+                {t("mod.openDir")}
+              </Button>
+              <Button
+                variant="tonal"
+                size="sm"
+                onClick={handleCheckUpdates}
+                disabled={checkingUpdates || !targetVersion || installedMods.length === 0}
+              >
+                <RefreshCw size={14} className={checkingUpdates ? "animate-spin" : undefined} />
+                {t("mod.checkUpdates")}
+              </Button>
+              <Button variant="text" size="sm" onClick={loadInstalled} disabled={loadingInstalled || !targetVersion}>
+                <RefreshCw size={14} className={loadingInstalled ? "animate-spin" : undefined} />
                 {t("common.retry")}
               </Button>
             </div>
@@ -292,7 +443,7 @@ export default function Mods() {
                 description={t("version.downloadPrompt")}
                 action={
                   <Button onClick={() => setActiveTab("explore")}>
-                    <Puzzle size={16} className="mr-1" />
+                    <Puzzle size={16} />
                     {t("mod.explore")}
                   </Button>
                 }
@@ -303,7 +454,7 @@ export default function Mods() {
                 description={t("mod.emptyInstalled")}
                 action={
                   <Button onClick={() => setActiveTab("explore")}>
-                    <Puzzle size={16} className="mr-1" />
+                    <Puzzle size={16} />
                     {t("mod.explore")}
                   </Button>
                 }
@@ -314,23 +465,49 @@ export default function Mods() {
                   <Card
                     key={mod.id}
                     hover
-                    onClick={() => navigate(`/mods/${mod.id}`, { state: { mod } })}
+                    onClick={() => navigate(`/mods/${mod.project_id ?? mod.id}`, { state: { mod } })}
                     className="flex items-center gap-3 p-3 animate-fade-in"
                   >
-                    <div className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center flex-shrink-0">
-                      <Puzzle size={20} className="text-on-surface-variant" />
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <Puzzle size={20} className="text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-on-surface truncate">{mod.name}</span>
-                        <Badge variant={mod.enabled ? "success" : "default"}>
+                        <Badge variant={mod.enabled ? "info" : "default"}>
                           {mod.enabled ? t("mod.enable") : t("mod.disable")}
                         </Badge>
                         <Badge>{mod.source}</Badge>
+                        <InstanceBadge instanceId={mod.instance_id} isIsolated={mod.is_isolated} />
                       </div>
-                      <p className="text-xs text-on-surface-variant truncate">{mod.version || mod.game_version || ""}</p>
+                      <p className="text-xs text-on-surface-variant truncate">
+                        {mod.version || mod.game_version || ""}
+                      </p>
+                      {mod.install_path && (
+                        <p className="text-xs text-on-surface-variant/70 truncate mt-0.5">
+                          {t("mod.installPath")}: {mod.install_path}
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-1">
+                      {updates[mod.id] && (
+                        <Button
+                          variant="filled"
+                          size="sm"
+                          loading={updatingId === mod.id}
+                          disabled={updatingId !== null}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleApplyUpdate(mod, updates[mod.id]);
+                          }}
+                          title={t("mod.updateAvailable", {
+                            version: updates[mod.id].version_number,
+                          })}
+                        >
+                          <Download size={14} />
+                          {t("mod.update")}
+                        </Button>
+                      )}
                       <Button
                         variant="text"
                         size="sm"
@@ -347,7 +524,7 @@ export default function Mods() {
                         size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDelete(mod);
+                          setDeleteTarget(mod);
                         }}
                         title={t("mod.delete")}
                       >
@@ -370,7 +547,7 @@ export default function Mods() {
                 className="flex-1"
               />
               <Button onClick={handleSearch} disabled={searching}>
-                <Search size={16} className="mr-1" />
+                <Search size={16} />
                 {searching ? t("mod.searching") : t("mod.search")}
               </Button>
             </div>
@@ -382,6 +559,24 @@ export default function Mods() {
             </div>
 
             <div className="flex-1 overflow-y-auto pr-1 space-y-3">
+              {searching && searchResults.length === 0 && (
+                <div className="grid grid-cols-1 gap-3">
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <div
+                      key={index}
+                      className="flex gap-3 p-3 rounded-card border border-outline-variant bg-surface-high animate-pulse"
+                    >
+                      <div className="w-12 h-12 rounded-lg bg-surface-container shrink-0" />
+                      <div className="flex-1 space-y-2 py-1">
+                        <div className="h-3 w-1/3 rounded bg-surface-container" />
+                        <div className="h-3 w-2/3 rounded bg-surface-container" />
+                        <div className="h-3 w-1/4 rounded bg-surface-container" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {!searching && searchResults.length === 0 && searchQuery.trim() === "" && (
                 <EmptyState title={t("common.noData")} description={t("mod.emptySearch")} />
               )}
@@ -391,9 +586,11 @@ export default function Mods() {
               )}
 
               {searchResults.length > 0 && (
-                <p className="text-xs text-on-surface-variant">
-                  {searchQuery.trim() === "" ? t("mod.recommendations") : t("mod.resultCount", { count: String(searchResults.length) })}
-                </p>
+                <div className="flex items-center gap-2">
+                  <Badge variant={searchQuery.trim() === "" ? "info" : "default"}>
+                    {searchQuery.trim() === "" ? t("mod.recommendations") : t("mod.resultCount", { count: String(searchResults.length) })}
+                  </Badge>
+                </div>
               )}
 
               <div className="grid grid-cols-1 gap-3">
@@ -401,7 +598,7 @@ export default function Mods() {
                   <Card
                     key={`${mod.source}-${mod.id}`}
                     hover
-                    onClick={() => navigate(`/mods/${mod.id}`, { state: { mod } })}
+                    onClick={() => navigate(`/mods/${mod.project_id ?? mod.id}`, { state: { mod } })}
                     className="flex gap-3 p-3 animate-fade-in"
                   >
                     <div className="w-12 h-12 rounded-lg bg-surface-container flex items-center justify-center flex-shrink-0 overflow-hidden">
@@ -415,7 +612,12 @@ export default function Mods() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-on-surface truncate">{mod.name}</span>
                         <Badge>{mod.source === "Modrinth" ? t("mod.sourceModrinth") : t("mod.sourceCurseForge")}</Badge>
-                        {mod.loader && <Badge variant="default">{t(`version.${mod.loader.toLowerCase()}`)}</Badge>}
+                        {mod.loader && (
+                          <Badge variant="default" className="gap-1">
+                            <VersionIcon loader={mod.loader} size={14} />
+                            {t(`version.${mod.loader.toLowerCase()}`)}
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-sm text-on-surface-variant line-clamp-2">{mod.description}</p>
                       <div className="flex items-center gap-3 text-xs text-on-surface-variant">
@@ -431,24 +633,24 @@ export default function Mods() {
                         size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDownload(mod);
+                          handleSelectVersion(mod);
                         }}
                         disabled={downloadingId === mod.id || !targetVersion}
                       >
                         {downloadingId === mod.id ? (
                           <>
-                            <RefreshCw size={14} className="mr-1 animate-spin" />
+                            <RefreshCw size={14} className="animate-spin" />
                             {t("mod.downloading")}
                           </>
                         ) : (
                           <>
-                            <Download size={14} className="mr-1" />
-                            {t("mod.download")}
+                            <ListChecks size={14} />
+                            {t("mod.selectVersion")}
                           </>
                         )}
                       </Button>
                       <a
-                        href={`https://${mod.source === "Modrinth" ? "modrinth.com/mod" : "curseforge.com/minecraft/mc-mods"}/${mod.id}`}
+                        href={`https://${mod.source === "Modrinth" ? "modrinth.com/mod" : "curseforge.com/minecraft/mc-mods"}/${mod.project_id ?? mod.id}`}
                         target="_blank"
                         rel="noreferrer"
                         onClick={(e) => e.stopPropagation()}
@@ -464,6 +666,29 @@ export default function Mods() {
             </div>
           </div>
         )}
+
+        <ModVersionSelector
+          mod={selectedMod}
+          targetVersion={targetVersion}
+          gameVersion={currentGameVersion}
+          loader={currentLoader}
+          open={selectedMod !== null}
+          onClose={() => setSelectedMod(null)}
+          onInstall={handleInstallVersion}
+          onDownloadLocal={handleDownloadLocal}
+        />
+
+        <ConfirmDialog
+          open={deleteTarget !== null}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={() => {
+            if (deleteTarget) handleDelete(deleteTarget);
+          }}
+          title={t("mod.delete")}
+          message={t("mod.deleteConfirm")}
+          confirmText={t("common.delete")}
+          danger
+        />
       </div>
     </PageTransition>
   );

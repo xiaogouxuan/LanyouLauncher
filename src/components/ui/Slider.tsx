@@ -28,21 +28,19 @@ export function Slider({
       {(label || showValue) && (
         <div className="flex items-center justify-between">
           {label && (
-            <span className="text-sm font-medium text-on-surface-variant">
-              {label}
-            </span>
+            <span className="text-[13px] text-on-surface-variant">{label}</span>
           )}
           {showValue && (
-            <span className="text-sm text-on-surface font-medium">
+            <span className="text-[13px] text-on-surface font-medium tabular-nums">
               {formatValue ? formatValue(value) : value}
             </span>
           )}
         </div>
       )}
-      <div className="relative h-6 flex items-center">
-        <div className="absolute w-full h-1.5 rounded-full bg-surface-container-highest" />
+      <div className="relative h-5 flex items-center">
+        <div className="absolute w-full h-1 rounded-full bg-surface-active" />
         <div
-          className="absolute h-1.5 rounded-full bg-primary"
+          className="absolute h-1 rounded-full bg-primary"
           style={{ width: `${percentage}%` }}
         />
         <input
@@ -52,11 +50,11 @@ export function Slider({
           step={step}
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="absolute w-full h-6 opacity-0 cursor-pointer"
+          className="absolute w-full h-5 opacity-0 cursor-pointer"
         />
         <div
-          className="absolute w-5 h-5 rounded-full bg-primary shadow-md border-2 border-on-primary transition-all duration-100"
-          style={{ left: `calc(${percentage}% - 10px)` }}
+          className="absolute w-3 h-3 rounded-full bg-primary border border-white/70 transition-transform duration-100"
+          style={{ left: `calc(${percentage}% - 6px)` }}
         />
       </div>
     </div>

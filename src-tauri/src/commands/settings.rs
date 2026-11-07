@@ -66,9 +66,30 @@ pub async fn select_java_for_version(
     ))
 }
 
-/// 选择背景图片文件
+/// 自动下载并安装指定主版本的 Java 运行时
 #[tauri::command]
-pub async fn select_background_image(app: tauri::AppHandle) -> Result<Option<String>, I18nError> {
+pub async fn download_java(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+    major: u32,
+) -> Result<String, I18nError> {
+    crate::services::java::downloader::download_java(&state, &app_handle, major).await
+}
+
+/// 获取指定 Java 可执行文件的版本号
+#[tauri::command]
+pub async fn get_java_version(java_path: String) -> Result<String, I18nError> {
+    let version = crate::services::java::detector::get_java_version(&std::path::PathBuf::from(&java_path))
+        .unwrap_or_default();
+    Ok(version)
+}
+
+/// 选择背景图片文件，并将图片复制到启动器配置目录中持久化保存
+#[tauri::command]
+pub async fn select_background_image(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, I18nError> {
     let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
     let tx = std::sync::Mutex::new(Some(tx));
 
@@ -88,12 +109,43 @@ pub async fn select_background_image(app: tauri::AppHandle) -> Result<Option<Str
         .await
         .map_err(|_| i18n_err!("errors.settings.readFileFailed", "dialog closed"))?;
 
-    // 验证文件真实存在
-    if let Some(ref path) = path_opt {
-        if !std::path::Path::new(path).is_file() {
-            return Ok(None);
+    let src_path = match path_opt {
+        Some(path) => std::path::PathBuf::from(path),
+        None => return Ok(None),
+    };
+
+    if !src_path.is_file() {
+        return Ok(None);
+    }
+
+    // 将图片复制到启动器配置目录的 img/backgrounds/ 下，避免原文件被移动/删除后壁纸失效
+    let backgrounds_dir = state.launcher_dir.join("img").join("backgrounds");
+    std::fs::create_dir_all(&backgrounds_dir)
+        .map_err(|e| i18n_err!("errors.settings.createDirFailed", e))?;
+
+    let ext = src_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("png");
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let file_name = format!("background_{}.{}", timestamp, ext);
+    let dest_path = backgrounds_dir.join(&file_name);
+
+    std::fs::copy(&src_path, &dest_path)
+        .map_err(|e| i18n_err!("errors.settings.copyFileFailed", e))?;
+
+    // 清理历史上传的背景图，避免长期使用后缓存目录无限增大
+    if let Ok(entries) = std::fs::read_dir(&backgrounds_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path != dest_path && path.is_file() {
+                let _ = std::fs::remove_file(path);
+            }
         }
     }
 
-    Ok(path_opt)
+    Ok(Some(dest_path.to_string_lossy().to_string()))
 }

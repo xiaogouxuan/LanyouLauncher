@@ -5,6 +5,7 @@ export interface Settings {
   language: string;
   theme: ThemeMode;
   download_source: DownloadSource;
+  curseforge_api_key: string;
   java_paths: string[];
   default_memory: number;
   default_game_dir: string;

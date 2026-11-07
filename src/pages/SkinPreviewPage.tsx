@@ -66,58 +66,55 @@ export default function SkinPreviewPage() {
 
   if (!account) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center" style={{ backgroundColor: "var(--md-sys-color-surface)" }}>
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-surface">
         <p className="text-on-surface-variant">{t("common.noData")}</p>
         <Button className="mt-4" onClick={() => navigate("/accounts")}>
-          <ArrowLeft size={16} className="mr-1" />
+          <ArrowLeft size={16} />
           {t("common.back")}
         </Button>
       </div>
     );
   }
 
+  const typeLabel =
+    account.account_type === "Microsoft"
+      ? t("account.microsoft")
+      : account.account_type === "ThirdParty"
+        ? t("account.thirdParty")
+        : t("account.offline");
+
+  const modelSize = Math.min(320, Math.max(190, window.innerWidth - 560));
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: "var(--md-sys-color-surface)" }}>
+    <div className="fixed inset-0 z-50 flex flex-col bg-surface">
       {/* 顶部导航 */}
-      <header className="flex items-center gap-4 px-6 py-4 border-b border-outline-variant/20">
-          <button
-            type="button"
-            onClick={() => navigate("/accounts")}
-            className="flex items-center gap-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"
-          >
-            <ArrowLeft size={18} />
-            {t("common.back")}
-          </button>
-          <div className="flex-1" />
-          <div className="flex items-center gap-3">
-            <SkinAvatar account={account} size={32} />
-            <div>
-              <span className="font-semibold text-on-surface">{account.username}</span>
-              <Badge
-                variant={isOffline ? "default" : "success"}
-                className="ml-2"
-              >
-                {isOffline ? t("account.offline") : t("account.microsoft")}
-              </Badge>
-            </div>
-          </div>
-        </header>
+      <header className="flex items-center gap-4 px-5 h-14 border-b border-outline-variant shrink-0">
+        <button
+          type="button"
+          onClick={() => navigate("/accounts")}
+          className="flex items-center gap-1.5 h-8 px-2 rounded-btn text-[12.5px] font-medium
+            text-on-surface-variant hover:text-on-surface hover:bg-surface-hover transition-colors"
+        >
+          <ArrowLeft size={16} />
+          {t("common.back")}
+        </button>
+        <div className="flex-1" />
+        <SkinAvatar account={account} size={30} className="ring-2 ring-primary/10" />
+        <span className="text-[13px] font-semibold text-on-surface">{account.username}</span>
+        <Badge variant={isOffline ? "default" : "info"}>{typeLabel}</Badge>
+      </header>
 
       {/* 主内容区 */}
-      <div className="flex-1 flex flex-col md:flex-row items-center justify-center gap-8 p-6 md:p-12 overflow-hidden">
-        {/* 3D 模型预览 — 大尺寸 */}
-        <div className="flex-shrink-0 flex items-center justify-center">
-          <SkinModel3D account={account} size={Math.min(320, window.innerWidth - 120)} />
+      <div className="flex-1 flex flex-col md:flex-row items-center justify-center gap-8 p-6 md:p-10 overflow-y-auto">
+        <div className="relative shrink-0 rounded-card border border-outline-variant bg-surface-high shadow-card">
+          <SkinModel3D account={account} size={modelSize} className="relative" />
         </div>
 
-        {/* 操作面板 */}
-        <div className="flex flex-col gap-4 w-72 max-w-full">
-          <div className="p-4 rounded-2xl bg-surface-container text-center">
-            <p className="text-sm text-on-surface-variant mb-1">
-              {t("skinPreview.dragToRotate")}
-            </p>
-            <p className="text-xs text-on-surface-variant/60">
-              {t("skinPreview.scrollToZoom")}
+        <div className="flex flex-col gap-3 w-full md:w-72 max-w-sm">
+          <div className="rounded-card border border-outline-variant bg-surface-container p-4">
+            <p className="text-[12.5px] font-medium text-on-surface">{t("skinPreview.dragToRotate")}</p>
+            <p className="text-[11.5px] text-on-surface-subtle mt-0.5">
+              {t("skinPreview.scrollToRotate")}
             </p>
           </div>
 
@@ -129,10 +126,8 @@ export default function SkinPreviewPage() {
                 disabled={selectingSkin}
                 size="lg"
               >
-                <Upload size={18} className="mr-2" />
-                {account.skin_path
-                  ? t("account.changeSkin")
-                  : t("account.selectSkin")}
+                <Upload size={17} />
+                {account.skin_path ? t("account.changeSkin") : t("account.selectSkin")}
               </Button>
 
               {account.skin_path && (
@@ -142,7 +137,7 @@ export default function SkinPreviewPage() {
                   disabled={selectingSkin}
                   size="lg"
                 >
-                  <Trash2 size={18} className="mr-2" />
+                  <Trash2 size={17} />
                   {t("account.clearSkin")}
                 </Button>
               )}
@@ -150,7 +145,7 @@ export default function SkinPreviewPage() {
           )}
 
           {!isOffline && (
-            <p className="text-sm text-on-surface-variant/60 text-center">
+            <p className="text-[11.5px] text-on-surface-subtle text-center leading-relaxed">
               {t("skinPreview.microsoftSkinNote")}
             </p>
           )}

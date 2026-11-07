@@ -32,6 +32,8 @@ pub struct Settings {
     pub theme: ThemeMode,
     /// 下载源
     pub download_source: DownloadSource,
+    /// CurseForge API Key
+    pub curseforge_api_key: String,
     /// Java 路径列表
     pub java_paths: Vec<String>,
     /// 默认内存（MB）
@@ -48,7 +50,7 @@ pub struct Settings {
     pub background_opacity: f32,
     /// 背景图片模糊半径（px）
     pub background_blur: f32,
-    /// 主题主色（HEX 格式，如 #3B82F6）
+    /// 主题主色（HEX 格式，如 #2F6BFF）
     pub theme_color: String,
     /// 游戏启动成功后是否关闭启动器
     pub close_after_launch: bool,
@@ -60,15 +62,16 @@ impl Default for Settings {
             language: "zh-CN".to_string(),
             theme: ThemeMode::System,
             download_source: DownloadSource::Official,
+            curseforge_api_key: String::new(),
             java_paths: Vec::new(),
             default_memory: 4096,
             default_game_dir: String::new(),
             auto_update: true,
             wallpaper: "img1".to_string(),
             background_image: String::new(),
-            background_opacity: 0.15,
+            background_opacity: 1.0,
             background_blur: 0.0,
-            theme_color: "#3B82F6".to_string(),
+            theme_color: "#2F6BFF".to_string(),
             close_after_launch: false,
         }
     }

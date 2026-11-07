@@ -10,9 +10,16 @@ dist/
 # IDE
 .idea/
 .vscode/
+.trae/
 *.swp
 *.swo
 *~
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+*__codex_temp.*
 
 # Tauri
 src-tauri/target/

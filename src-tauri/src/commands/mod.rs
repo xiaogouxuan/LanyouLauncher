@@ -1,4 +1,5 @@
 pub mod account;
+pub mod easytier;
 pub mod launch;
 pub mod mod_manager;
 pub mod settings;

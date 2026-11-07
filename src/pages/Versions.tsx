@@ -3,25 +3,20 @@ import { useNavigate } from "react-router-dom";
 import {
   Download,
   Trash2,
-  FolderOpen,
   RefreshCw,
   Search,
-  Box,
-  Gamepad2,
-  Clock,
   Sparkles,
-  History,
-  AlertCircle,
-  FileCode,
   ExternalLink,
   Puzzle,
+  ChevronRight,
 } from "lucide-react";
+import { VersionIcon } from "@/components/game/VersionIcon";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Modal } from "@/components/ui/Modal";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
 import { EmptyState } from "@/components/common/EmptyState";
 import { useTranslation } from "@/i18n";
@@ -40,43 +35,21 @@ type VersionCategory = {
   type: VersionType;
   labelKey: string;
   icon: React.ReactNode;
-  color: "success" | "warning" | "default" | "danger" | "info" | "purple";
 };
 
-const TYPE_ICON: Record<VersionType, React.ReactNode> = {
-  Release: <Box size={20} />,
-  Snapshot: <Clock size={20} />,
-  PreRelease: <FileCode size={20} />,
-  ReleaseCandidate: <FileCode size={20} />,
-  OldBeta: <History size={20} />,
-  OldAlpha: <History size={20} />,
-  Pending: <AlertCircle size={20} />,
-  AprilFools: <Sparkles size={20} />,
-  Unobfuscated: <FileCode size={20} />,
-};
-
-const TYPE_VARIANT: Record<VersionType, "success" | "warning" | "default" | "danger" | "info" | "purple"> = {
-  Release: "success",
+const TYPE_VARIANT: Record<VersionType, "success" | "warning" | "default" | "info"> = {
+  Release: "info",
   Snapshot: "warning",
   PreRelease: "info",
   ReleaseCandidate: "info",
   OldBeta: "default",
   OldAlpha: "default",
   Pending: "info",
-  AprilFools: "purple",
+  AprilFools: "warning",
   Unobfuscated: "default",
 };
 
-function formatDate(dateStr: string | number | null | undefined): string {
-  if (!dateStr) return "";
-  try {
-    return new Date(dateStr).toLocaleDateString();
-  } catch {
-    return String(dateStr);
-  }
-}
-
-interface VersionItemCardProps {
+interface VersionRowProps {
   version: VersionInfo;
   isInstalled: boolean;
   downloadingId: string | null;
@@ -87,7 +60,7 @@ interface VersionItemCardProps {
   onDownload: (versionId: string) => void;
 }
 
-const VersionItemCard = memo(function VersionItemCard({
+const VersionRow = memo(function VersionRow({
   version,
   isInstalled,
   downloadingId,
@@ -96,91 +69,116 @@ const VersionItemCard = memo(function VersionItemCard({
   onInstallLoader,
   onDelete,
   onDownload,
-}: VersionItemCardProps) {
-  const { t } = useTranslation();
+}: VersionRowProps) {
+  const { t, language } = useTranslation();
+
+  const formatDate = (dateStr: string | number | null | undefined): string => {
+    if (!dateStr) return "";
+    try {
+      return new Date(dateStr).toLocaleDateString(language);
+    } catch {
+      return String(dateStr);
+    }
+  };
 
   return (
-    <Card
-      hover
+    <div
       onClick={isInstalled ? () => onNavigate(version) : undefined}
-      className="flex items-center justify-between p-3 group"
+      className={`flex items-center justify-between gap-3 px-4 py-2.5 border-b border-outline-variant last:border-b-0
+        hover:bg-surface-hover/50 transition-colors group ${isInstalled ? "cursor-pointer" : ""}`}
     >
       <div className="flex items-center gap-3 min-w-0">
-        <div className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center flex-shrink-0 text-on-surface-variant">
-          {isInstalled ? <FolderOpen size={20} /> : TYPE_ICON[version.version_type] ?? <Gamepad2 size={20} />}
+        <div
+          className={`w-8 h-8 rounded-[7px] flex items-center justify-center flex-shrink-0 transition-transform duration-150 group-hover:scale-105 ${
+            isInstalled ? "bg-primary/10" : "bg-surface-container"
+          }`}
+        >
+          <VersionIcon version={version} size={18} />
         </div>
         <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-on-surface truncate">{version.id}</span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[13px] font-medium text-on-surface truncate">{version.id}</span>
             <Badge variant={TYPE_VARIANT[version.version_type]}>
               {t(`version.${version.version_type.toLowerCase()}`)}
             </Badge>
-            {version.loader && <Badge>{t(`version.${version.loader.toLowerCase()}`)}</Badge>}
+            {version.loader && (
+              <Badge className="gap-1">
+                <VersionIcon loader={version.loader} size={11} />
+                {t(`version.${version.loader.toLowerCase()}`)}
+              </Badge>
+            )}
           </div>
-          {version.release_time && (
-            <p className="text-xs text-on-surface-variant mt-0.5">{formatDate(version.release_time)}</p>
-          )}
-          {version.lore && <p className="text-xs text-primary/80 mt-0.5">{t(version.lore)}</p>}
-          {isInstalled && version.install_time && (
-            <p className="text-xs text-on-surface-variant mt-0.5">
-              {t("version.installedAt")} {formatDate(version.install_time)}
-            </p>
-          )}
+          <p className="text-[11px] text-on-surface-subtle mt-0.5 truncate">
+            {version.release_time && formatDate(version.release_time)}
+            {isInstalled && version.install_time && (
+              <span className="ml-2">
+                {t("version.installedAt")} {formatDate(version.install_time)}
+              </span>
+            )}
+            {version.lore && <span className="ml-2 text-primary/80">{t(version.lore)}</span>}
+          </p>
         </div>
       </div>
-      <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+
+      <div className="flex items-center gap-1 flex-shrink-0">
         {!isInstalled && (
           <Button
             variant="text"
             size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
+            onClick={(event) => {
+              event.stopPropagation();
               onOpenWiki(version.id);
             }}
-            title={t("common.search")}
+            title={t("version.openWiki")}
           >
-            <ExternalLink size={16} />
+            <ExternalLink size={15} />
           </Button>
         )}
         {isInstalled && !version.loader && (
           <Button
             variant="text"
             size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
+            onClick={(event) => {
+              event.stopPropagation();
               onInstallLoader(version.id);
             }}
             title={t("version.installLoader")}
           >
-            <Puzzle size={16} />
+            <Puzzle size={15} />
           </Button>
         )}
         {isInstalled ? (
-          <Button
-            variant="text"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(version.id);
-            }}
-          >
-            <Trash2 size={16} />
-          </Button>
+          <>
+            <Button
+              variant="text"
+              size="sm"
+              className="text-danger hover:bg-danger-container hover:text-danger"
+              onClick={(event) => {
+                event.stopPropagation();
+                onDelete(version.id);
+              }}
+              title={t("common.delete")}
+            >
+              <Trash2 size={15} />
+            </Button>
+            <ChevronRight size={15} className="text-on-surface-subtle" />
+          </>
         ) : (
           <Button
             size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
+            onClick={(event) => {
+              event.stopPropagation();
               onDownload(version.id);
             }}
             loading={downloadingId === version.id}
+            disabled={downloadingId !== null && downloadingId !== version.id}
           >
-            <Download size={14} className="mr-1" />
+            <Download size={13} />
             {t("version.download")}
           </Button>
         )}
       </div>
-    </Card>
+    </div>
   );
 });
 
@@ -205,78 +203,27 @@ export default function Versions() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [installingLoaderId, setInstallingLoaderId] = useState<string | null>(null);
   const [loaderModalVersion, setLoaderModalVersion] = useState<string | null>(null);
+  const [installVersion, setInstallVersion] = useState<string | null>(null);
+  const [installLoader, setInstallLoader] = useState<LoaderType | "none">("none");
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const loaderOptions = useMemo(
     () => [
-      {
-        value: "Fabric" as LoaderType,
-        label: t("version.fabric"),
-        desc: t("version.fabricDesc"),
-        color: "from-amber-500/10 to-orange-500/5",
-        iconColor: "text-amber-500",
-      },
-      {
-        value: "Forge" as LoaderType,
-        label: t("version.forge"),
-        desc: t("version.forgeDesc"),
-        color: "from-red-500/10 to-orange-500/5",
-        iconColor: "text-red-500",
-      },
-      {
-        value: "NeoForge" as LoaderType,
-        label: t("version.neoforge"),
-        desc: t("version.neoforgeDesc"),
-        color: "from-orange-500/10 to-amber-500/5",
-        iconColor: "text-orange-500",
-      },
-      {
-        value: "Quilt" as LoaderType,
-        label: t("version.quilt"),
-        desc: t("version.quiltDesc"),
-        color: "from-purple-500/10 to-indigo-500/5",
-        iconColor: "text-purple-500",
-      },
+      { value: "Fabric" as LoaderType, label: t("version.fabric"), desc: t("version.fabricDesc") },
+      { value: "Forge" as LoaderType, label: t("version.forge"), desc: t("version.forgeDesc") },
+      { value: "NeoForge" as LoaderType, label: t("version.neoforge"), desc: t("version.neoforgeDesc") },
+      { value: "Quilt" as LoaderType, label: t("version.quilt"), desc: t("version.quiltDesc") },
     ],
     [t]
   );
 
   const categories = useMemo<VersionCategory[]>(
     () => [
-      {
-        key: "release",
-        type: "Release",
-        labelKey: "version.release",
-        icon: <Box size={18} />,
-        color: "success",
-      },
-      {
-        key: "snapshot",
-        type: "Snapshot",
-        labelKey: "version.snapshot",
-        icon: <Clock size={18} />,
-        color: "warning",
-      },
-      {
-        key: "april_fools",
-        type: "AprilFools",
-        labelKey: "version.aprilFools",
-        icon: <Sparkles size={18} />,
-        color: "purple",
-      },
-      {
-        key: "old",
-        type: "OldBeta",
-        labelKey: "version.oldBeta",
-        icon: <History size={18} />,
-        color: "default",
-      },
-      {
-        key: "pending",
-        type: "Pending",
-        labelKey: "version.pending",
-        icon: <AlertCircle size={18} />,
-        color: "info",
-      },
+      { key: "release", type: "Release", labelKey: "version.release", icon: <VersionIcon versionType="Release" size={15} /> },
+      { key: "snapshot", type: "Snapshot", labelKey: "version.snapshot", icon: <VersionIcon versionType="Snapshot" size={15} /> },
+      { key: "april_fools", type: "AprilFools", labelKey: "version.aprilFools", icon: <VersionIcon versionType="AprilFools" size={15} /> },
+      { key: "old", type: "OldBeta", labelKey: "version.oldBeta", icon: <VersionIcon versionType="OldBeta" size={15} /> },
+      { key: "pending", type: "Pending", labelKey: "version.pending", icon: <VersionIcon versionType="Pending" size={15} /> },
     ],
     []
   );
@@ -314,19 +261,34 @@ export default function Versions() {
 
   const handleDownload = useCallback(
     async (versionId: string) => {
-      setDownloadingId(versionId);
-      try {
-        await versionService.downloadVersion(versionId, settings.download_source);
-        showToast("success", t("version.downloadSuccess", { version: versionId }));
-        await loadInstalled();
-      } catch (error) {
-        showToast("error", formatError(error));
-      } finally {
-        setDownloadingId(null);
-      }
+      setInstallVersion(versionId);
+      setInstallLoader("none");
     },
-    [settings.download_source, showToast, t, loadInstalled]
+    []
   );
+
+  const handleStartInstall = useCallback(async () => {
+    if (!installVersion) return;
+    const versionId = installVersion;
+    setDownloadingId(versionId);
+    try {
+      const downloaded = await versionService.downloadVersion(versionId, settings.download_source);
+      if (!downloaded) return;
+      showToast("success", t("version.downloadSuccess", { version: versionId }));
+      if (installLoader !== "none") {
+        setInstallingLoaderId(versionId);
+        await versionService.installLoader(versionId, installLoader);
+        showToast("success", t("version.installLoaderSuccess", { loader: installLoader, version: versionId }));
+      }
+      await loadInstalled();
+      setInstallVersion(null);
+    } catch (error) {
+      showToast("error", formatError(error));
+    } finally {
+      setDownloadingId(null);
+      setInstallingLoaderId(null);
+    }
+  }, [installVersion, installLoader, settings.download_source, showToast, t, loadInstalled]);
 
   const handleDelete = useCallback(
     async (versionId: string) => {
@@ -342,11 +304,10 @@ export default function Versions() {
   );
 
   const handleInstallLoader = useCallback(
-    async (versionId: string, loader: string) => {
+    async (versionId: string, loader: LoaderType) => {
       const target = installedVersions.find((v) => v.id === versionId);
-      if (target?.loader?.toLowerCase() === loader.toLowerCase()) {
+      if (target?.loader === loader) {
         showToast("info", t("version.loaderAlreadyInstalled", { loader }));
-        setLoaderModalVersion(null);
         return;
       }
       setInstallingLoaderId(versionId);
@@ -432,12 +393,10 @@ export default function Versions() {
   }, [remoteVersions, categoryFilter, searchQuery, filterByCategory, filterBySearch]);
 
   const groupedRemote = useMemo(() => {
-    const sorted = [...filteredRemote].sort((a, b) => {
-      return new Date(b.release_time).getTime() - new Date(a.release_time).getTime();
-    });
-
+    const sorted = [...filteredRemote].sort(
+      (a, b) => new Date(b.release_time).getTime() - new Date(a.release_time).getTime()
+    );
     const groups: { category: VersionCategory; versions: VersionInfo[] }[] = [];
-
     for (const category of categories) {
       let versions: VersionInfo[];
       if (category.key === "old") {
@@ -454,11 +413,8 @@ export default function Versions() {
       } else {
         versions = sorted.filter((v) => v.version_type === category.type);
       }
-      if (versions.length > 0) {
-        groups.push({ category, versions });
-      }
+      if (versions.length > 0) groups.push({ category, versions });
     }
-
     return groups;
   }, [filteredRemote, categories]);
 
@@ -493,63 +449,80 @@ export default function Versions() {
     [t]
   );
 
+  const tabButtonClass = (tab: "installed" | "available") =>
+    `segmented-item ${activeTab === tab ? "segmented-item-active" : "segmented-item-idle"}`;
+
   return (
     <PageTransition>
-      <div className="p-6 space-y-4 h-full flex flex-col">
-        <h1 className="text-2xl font-bold text-on-surface">{t("version.title")}</h1>
-
-        {/* 标签切换 */}
-        <div className="flex gap-2">
-          <Button variant={activeTab === "installed" ? "filled" : "tonal"} size="sm" onClick={() => setActiveTab("installed")}>
-            {t("version.installed")}
-          </Button>
-          <Button variant={activeTab === "available" ? "filled" : "tonal"} size="sm" onClick={() => setActiveTab("available")}>
-            {t("version.notInstalled")}
-          </Button>
+      <div className="p-5 h-full flex flex-col gap-3.5">
+        <div className="flex items-center justify-between gap-3 shrink-0 pb-3 border-b border-outline-variant">
+          <div className="min-w-0">
+            <h1 className="wallpaper-text text-[18px] font-semibold tracking-tight truncate">{t("version.title")}</h1>
+          </div>
+          <div className="segmented shrink-0">
+            <button className={tabButtonClass("installed")} onClick={() => setActiveTab("installed")}>
+              {t("version.installed")}
+            </button>
+            <button className={tabButtonClass("available")} onClick={() => setActiveTab("available")}>
+              {t("version.notInstalled")}
+            </button>
+          </div>
         </div>
 
-        {/* 搜索与过滤工具栏 */}
-        <div className="flex gap-3">
+        <div className="flex gap-2.5 shrink-0">
           <div className="relative flex-1">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-subtle" />
             <Input
               placeholder={t("common.search")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="pl-8"
             />
           </div>
           <Select
             options={categoryOptions}
             value={categoryFilter}
             onChange={(v) => setCategoryFilter(v as CategoryFilter)}
-            className="w-40"
+            className="w-[150px] shrink-0"
           />
           {activeTab === "available" && (
-            <Button size="sm" variant="tonal" onClick={loadRemote} loading={loading}>
-              <RefreshCw size={14} className={`mr-1 ${loading ? "animate-spin" : ""}`} />
+            <Button size="sm" variant="tonal" onClick={loadRemote} loading={loading} className="shrink-0">
+              <RefreshCw size={14} />
               {t("version.refresh")}
             </Button>
           )}
         </div>
 
-        {/* 已安装版本 */}
         {activeTab === "installed" && (
           <div className="flex-1 flex flex-col overflow-hidden">
             {installedVersions.length === 0 ? (
-              <EmptyState
-                title={t("home.noVersion")}
-                description={t("version.downloadPrompt")}
-                action={
-                  <Button onClick={() => setActiveTab("available")}>{t("version.download")}</Button>
-                }
-              />
+              <div className="flex-1 flex items-center justify-center">
+                <EmptyState
+                  title={t("home.noVersion")}
+                  description={t("version.downloadPrompt")}
+                  action={
+                    <Button onClick={() => setActiveTab("available")}>{t("version.download")}</Button>
+                  }
+                />
+              </div>
             ) : filteredInstalled.length === 0 ? (
-              <EmptyState title={t("version.noAvailable")} description={t("version.noMatchingVersions")} />
+              <div className="flex-1 flex items-center justify-center">
+                <EmptyState title={t("version.noAvailable")} description={t("version.noMatchingVersions")} />
+              </div>
             ) : (
-              <div className="space-y-2 overflow-y-auto flex-1 pr-1">
+              <div className="panel-fill flex flex-col flex-1 overflow-hidden">
+                <div className="panel-header shrink-0">
+                  <span className="w-5 h-5 rounded-[4px] bg-primary/10 flex items-center justify-center">
+                    <VersionIcon versionType="Release" size={14} />
+                  </span>
+                  <span className="text-[12px] font-semibold text-on-surface flex-1">
+                    {t("version.installed")}
+                  </span>
+                  <Badge variant="info">{filteredInstalled.length}</Badge>
+                </div>
+                <div className="overflow-y-auto flex-1">
                 {filteredInstalled.map((version) => (
-                  <VersionItemCard
+                  <VersionRow
                     key={version.id}
                     version={version}
                     isInstalled
@@ -557,87 +530,108 @@ export default function Versions() {
                     onNavigate={handleNavigate}
                     onOpenWiki={handleOpenWiki}
                     onInstallLoader={handleInstallLoaderClick}
-                    onDelete={handleDelete}
+                    onDelete={setDeleteTarget}
                     onDownload={handleDownload}
                   />
                 ))}
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {/* 可用版本 */}
         {activeTab === "available" && (
           <div className="flex-1 flex flex-col overflow-hidden">
             {loading && remoteVersions.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center text-on-surface-variant animate-pulse">
+              <div className="flex-1 flex items-center justify-center text-[13px] text-on-surface-variant animate-pulse">
                 {t("common.loading")}
               </div>
             ) : remoteVersions.length === 0 ? (
-              <EmptyState
-                title={t("version.noAvailable")}
-                description={t("version.loadFailed")}
-                action={
-                  <Button onClick={loadRemote}>
-                    <RefreshCw size={16} className="mr-1" />
-                    {t("common.retry")}
-                  </Button>
-                }
-              />
+              <div className="flex-1 flex items-center justify-center">
+                <EmptyState
+                  title={t("version.noAvailable")}
+                  description={t("version.loadFailed")}
+                  action={
+                    <Button onClick={loadRemote}>
+                      <RefreshCw size={15} />
+                      {t("common.retry")}
+                    </Button>
+                  }
+                />
+              </div>
             ) : (
-              <div className="space-y-4 overflow-y-auto flex-1 pr-1">
-                {/* 最新版本卡片 */}
+              <div className="space-y-3 overflow-y-auto flex-1 pr-0.5">
                 {(latestRelease || latestSnapshot) && categoryFilter === "all" && !searchQuery && (
-                  <Card className="p-4 bg-primary-container/50 border-primary/20">
-                    <h3 className="text-sm font-semibold text-on-surface mb-3 flex items-center gap-2">
-                      <Sparkles size={16} className="text-primary" />
-                      {t("version.latestVersions")}
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <section className="relative overflow-hidden rounded-card border border-outline-variant bg-surface-high shadow-card">
+                    <div className="relative flex items-center gap-2 px-4 h-10 border-b border-outline-variant">
+                      <span className="w-5 h-5 rounded-[4px] bg-primary/10 text-primary flex items-center justify-center">
+                        <Sparkles size={12} />
+                      </span>
+                      <span className="text-[12px] font-semibold text-on-surface">
+                        {t("version.latestVersions")}
+                      </span>
+                    </div>
+                    <div className="relative divide-y divide-outline-variant">
                       {latestRelease && (
-                        <div className="flex items-center justify-between p-3 rounded-xl bg-surface-container-high border border-outline-variant">
-                          <div>
-                            <p className="text-xs text-on-surface-variant">{t("version.release")}</p>
-                            <p className="text-lg font-bold text-on-surface">{latestRelease.id}</p>
-                            <p className="text-xs text-on-surface-variant">{formatDate(latestRelease.release_time)}</p>
+                        <div className="flex items-center justify-between gap-3 px-4 py-3">
+                          <div className="min-w-0">
+                            <p className="text-[11px] text-on-surface-variant">{t("version.release")}</p>
+                            <p className="text-[14px] font-semibold text-on-surface">{latestRelease.id}</p>
+                            <p className="text-[11px] text-on-surface-subtle">
+                              {new Date(latestRelease.release_time).toLocaleDateString()}
+                            </p>
                           </div>
-                          <Button size="sm" onClick={() => handleDownload(latestRelease.id)} loading={downloadingId === latestRelease.id}>
-                            <Download size={14} className="mr-1" />
+                          <Button
+                            size="sm"
+                            onClick={() => handleDownload(latestRelease.id)}
+                            disabled={downloadingId !== null}
+                          >
+                            <Download size={13} />
                             {t("version.download")}
                           </Button>
                         </div>
                       )}
                       {latestSnapshot && (
-                        <div className="flex items-center justify-between p-3 rounded-xl bg-surface-container-high border border-outline-variant">
-                          <div>
-                            <p className="text-xs text-on-surface-variant">{t("version.snapshot")}</p>
-                            <p className="text-lg font-bold text-on-surface">{latestSnapshot.id}</p>
-                            <p className="text-xs text-on-surface-variant">{formatDate(latestSnapshot.release_time)}</p>
+                        <div className="flex items-center justify-between gap-3 px-4 py-3">
+                          <div className="min-w-0">
+                            <p className="text-[11px] text-on-surface-variant">{t("version.snapshot")}</p>
+                            <p className="text-[14px] font-semibold text-on-surface">{latestSnapshot.id}</p>
+                            <p className="text-[11px] text-on-surface-subtle">
+                              {new Date(latestSnapshot.release_time).toLocaleDateString()}
+                            </p>
                           </div>
-                          <Button size="sm" onClick={() => handleDownload(latestSnapshot.id)} loading={downloadingId === latestSnapshot.id}>
-                            <Download size={14} className="mr-1" />
+                          <Button
+                            size="sm"
+                            onClick={() => handleDownload(latestSnapshot.id)}
+                            disabled={downloadingId !== null}
+                          >
+                            <Download size={13} />
                             {t("version.download")}
                           </Button>
                         </div>
                       )}
                     </div>
-                  </Card>
+                  </section>
                 )}
 
-                {/* 分类版本卡片 */}
                 {groupedRemote.length === 0 ? (
                   <EmptyState title={t("version.noAvailable")} description={t("version.noMatchingVersions")} />
                 ) : (
                   groupedRemote.map(({ category, versions }) => (
-                    <Card key={category.key} className="overflow-hidden">
-                      <div className="flex items-center gap-2 p-3 border-b border-outline-variant bg-surface-container">
-                        <span className="text-primary">{category.icon}</span>
-                        <h3 className="font-semibold text-on-surface">{t(category.labelKey)}</h3>
+                    <section
+                      key={category.key}
+                      className="rounded-card border border-outline-variant bg-surface-high overflow-hidden shadow-card"
+                    >
+                      <div className="flex items-center gap-2 px-4 h-10 border-b border-outline-variant">
+                        <span className="w-5 h-5 rounded-[4px] bg-surface-container text-on-surface-variant flex items-center justify-center">
+                          {category.icon}
+                        </span>
+                        <h3 className="text-[12px] font-semibold text-on-surface flex-1">{t(category.labelKey)}</h3>
                         <Badge variant="default">{String(versions.length)}</Badge>
                       </div>
-                      <div className="p-3 space-y-2 max-h-80 overflow-y-auto">
+                      <div className="max-h-80 overflow-y-auto">
                         {versions.map((version) => (
-                          <VersionItemCard
+                          <VersionRow
                             key={version.id}
                             version={version}
                             isInstalled={false}
@@ -645,12 +639,12 @@ export default function Versions() {
                             onNavigate={handleNavigate}
                             onOpenWiki={handleOpenWiki}
                             onInstallLoader={handleInstallLoaderClick}
-                            onDelete={handleDelete}
+                            onDelete={setDeleteTarget}
                             onDownload={handleDownload}
                           />
                         ))}
                       </div>
-                    </Card>
+                    </section>
                   ))
                 )}
               </div>
@@ -658,17 +652,97 @@ export default function Versions() {
           </div>
         )}
 
-        {/* 加载器安装卡片弹窗 */}
+        {/* 新版本安装：先选加载器再下载 */}
+        <Modal
+          open={installVersion !== null}
+          onClose={() => setInstallVersion(null)}
+          title={t("version.installWithLoader")}
+        >
+          <div className="space-y-3.5">
+            <p className="text-[12px] text-on-surface-variant">
+              {t("version.installWithLoaderHint")}
+            </p>
+            <div className="flex items-center gap-2 text-[13px] text-on-surface">
+              <VersionIcon versionType="Release" size={16} />
+              <span className="font-medium">{installVersion}</span>
+            </div>
+
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setInstallLoader("none")}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-btn border text-left transition-colors duration-150 ${
+                  installLoader === "none"
+                    ? "border-primary bg-primary/8"
+                    : "border-outline-variant bg-surface-container hover:bg-surface-hover"
+                }`}
+              >
+                <div className="w-7 h-7 rounded-[4px] bg-primary/10 flex items-center justify-center">
+                  <VersionIcon versionType="Release" size={16} />
+                </div>
+                <span className="text-[13px] text-on-surface">{t("version.loaderNone")}</span>
+              </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                {loaderOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setInstallLoader(option.value)}
+                    className={`flex items-start gap-2.5 p-3 rounded-btn border text-left transition-colors duration-150 ${
+                      installLoader === option.value
+                        ? "border-primary bg-primary/8"
+                        : "border-outline-variant bg-surface-container hover:bg-surface-hover"
+                    }`}
+                  >
+                    <div className="w-7 h-7 rounded-[4px] bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <VersionIcon loader={option.value} size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[12.5px] font-medium text-on-surface">{option.label}</p>
+                      <p className="text-[10.5px] text-on-surface-subtle mt-0.5 line-clamp-2">
+                        {option.desc}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                variant="text"
+                onClick={() => setInstallVersion(null)}
+                disabled={downloadingId !== null}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                onClick={handleStartInstall}
+                loading={downloadingId !== null || installingLoaderId !== null}
+                disabled={downloadingId !== null || installingLoaderId !== null}
+              >
+                {installingLoaderId
+                  ? t("version.installing")
+                  : downloadingId
+                  ? t("version.downloading", { version: installVersion || "" })
+                  : t("version.startInstall")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* 已安装版本追加加载器 */}
         <Modal
           open={!!loaderModalVersion}
           onClose={() => setLoaderModalVersion(null)}
           title={t("version.selectLoader")}
         >
           <div className="space-y-3">
-            <p className="text-sm text-on-surface-variant">
+            <p className="text-[12px] text-on-surface-variant">
               {t("version.installLoaderHint", { version: loaderModalVersion || "" })}
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2">
               {loaderOptions.map((option) => (
                 <button
                   key={option.value}
@@ -680,22 +754,34 @@ export default function Versions() {
                       setLoaderModalVersion(null);
                     }
                   }}
-                  className={`relative p-4 rounded-xl border border-outline-variant bg-surface-container
-                    hover:border-primary/50 hover:shadow-md hover:bg-surface-container-high transition-all text-left group
-                    disabled:opacity-50 disabled:cursor-not-allowed`}
+                  className="flex items-start gap-2.5 p-3 rounded-btn border border-outline-variant bg-surface-container
+                    hover:border-primary hover:bg-surface-hover transition-colors text-left
+                    disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className={`w-10 h-10 rounded-lg bg-surface-container-high border border-outline-variant flex items-center justify-center ${option.iconColor}`}>
-                      <Puzzle size={20} />
-                    </div>
-                    <span className="font-semibold text-on-surface">{option.label}</span>
+                  <div className="w-8 h-8 rounded-btn bg-surface-hover border border-outline-variant flex items-center justify-center flex-shrink-0">
+                    <VersionIcon loader={option.value} size={18} />
                   </div>
-                  <p className="text-xs text-on-surface-variant">{option.desc}</p>
+                  <div className="min-w-0">
+                    <p className="text-[12.5px] font-medium text-on-surface">{option.label}</p>
+                    <p className="text-[10.5px] text-on-surface-subtle mt-0.5 line-clamp-2">
+                      {option.desc}
+                    </p>
+                  </div>
                 </button>
               ))}
             </div>
           </div>
         </Modal>
+
+        <ConfirmDialog
+          open={deleteTarget !== null}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={() => deleteTarget && handleDelete(deleteTarget)}
+          title={t("version.deleteVersion")}
+          message={t("version.deleteConfirm", { version: deleteTarget || "" })}
+          confirmText={t("common.delete")}
+          danger
+        />
       </div>
     </PageTransition>
   );

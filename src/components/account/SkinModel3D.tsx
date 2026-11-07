@@ -1,13 +1,48 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { accountService } from "@/services/accountService";
-import { getCachedSkin, cacheSkin } from "@/services/skinCache";
+import { useEffect, useRef, useState } from "react";
+import { User } from "lucide-react";
+import {
+  cacheSkin,
+  detectSlimFromImage,
+  getCachedSkin,
+  loadImage,
+  loadSkinForAccount,
+} from "@/services/skinCache";
 import { useTranslation } from "@/i18n";
 import type { Account } from "@/types/account";
 
-// ============================================================
-// 皮肤纹理加载 & Slim 模型检测
-// ============================================================
+type UVRect = [number, number, number, number];
+
+interface CubeUV {
+  top: UVRect;
+  bottom: UVRect;
+  right: UVRect;
+  front: UVRect;
+  left: UVRect;
+  back: UVRect;
+}
+
+interface Point3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+interface Part {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+  z0: number;
+  z1: number;
+  uv: CubeUV;
+}
+
+interface Face {
+  corners: [Point3, Point3, Point3, Point3];
+  uv: UVRect;
+  normal: Point3;
+  shade: number;
+}
 
 interface SkinModel3DProps {
   account: Account | null;
@@ -15,149 +50,16 @@ interface SkinModel3DProps {
   className?: string;
 }
 
-const TEX_SCALE = 4; // 256x256 纹理，64x64 UV 坐标 * 4
-
-/** 尝试加载皮肤纹理，优先本地文件，其次在线 API */
-async function loadSkinTexture(account: Account): Promise<HTMLImageElement | null> {
-  // 1. 本地自定义皮肤优先（base64 兜底，避免 convertFileSrc 在某些路径失败）
-  if (account.skin_path) {
-    try {
-      const dataUrl = await accountService.readSkinDataUrl(account.skin_path);
-      return await loadImage(dataUrl);
-    } catch (err) {
-      console.warn("[SkinModel3D] base64 read failed:", err);
-    }
-  }
-
-  // 2. 在线 API
-  const uuid = account.id.replace(/-/g, "");
-  const urls = [
-    `https://crafatar.com/skins/${uuid}`,
-    `https://mc-heads.net/skin/${uuid}`,
-    `https://visage.surgeplay.com/skin/${uuid}`,
-  ];
-  for (const url of urls) {
-    try {
-      return await loadImage(url);
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
-}
-
-function loadImage(url: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    if (!url.startsWith("data:image/") && !url.startsWith("https://asset.localhost/")) {
-      img.crossOrigin = "anonymous";
-    }
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("load failed"));
-    img.src = url;
-  });
-}
-
-/**
- * 基于皮肤像素检测是否为 Alex（slim）模型
- * 与 HMCL NormalizedSkin.isSlim() 一致：
- *   检查右臂/左臂边缘是否有透明/黑色像素
+/*
+ * 皮肤按 Minecraft 64×64 标准布局解析。
+ * 每个部件由内层与外层（帽子、外套、袖套、裤腿）两组 UV 组成。
  */
-function detectSlimFromPixels(img: HTMLImageElement): boolean {
-  const canvas = document.createElement("canvas");
-  canvas.width = img.naturalWidth;
-  canvas.height = img.naturalHeight;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return false;
-
-  ctx.drawImage(img, 0, 0);
-  const scale = img.naturalWidth / 64;
-
-  const hasTransparency = (x: number, y: number, w: number, h: number): boolean => {
-    for (let dy = 0; dy < h * scale; dy++) {
-      for (let dx = 0; dx < w * scale; dx++) {
-        const px = ctx.getImageData(
-          Math.floor(x * scale + dx),
-          Math.floor(y * scale + dy),
-          1, 1,
-        ).data;
-        if (px[3] < 255) return true;
-      }
-    }
-    return false;
-  };
-
-  const isBlack = (x: number, y: number, w: number, h: number): boolean => {
-    for (let dy = 0; dy < h * scale; dy++) {
-      for (let dx = 0; dx < w * scale; dx++) {
-        const px = ctx.getImageData(
-          Math.floor(x * scale + dx),
-          Math.floor(y * scale + dy),
-          1, 1,
-        ).data;
-        if (!(px[0] === 0 && px[1] === 0 && px[2] === 0 && px[3] === 255)) return false;
-      }
-    }
-    return true;
-  };
-
-  if (hasTransparency(50, 16, 2, 4) || hasTransparency(54, 20, 2, 12) ||
-      hasTransparency(42, 48, 2, 4) || hasTransparency(46, 52, 2, 12)) {
-    return true;
-  }
-  if (isBlack(50, 16, 2, 4) && isBlack(54, 20, 2, 12) &&
-      isBlack(42, 48, 2, 4) && isBlack(46, 52, 2, 12)) {
-    return true;
-  }
-  return false;
-}
-
-/**
- * 将任意尺寸的皮肤纹理规范化为 256x256，保持像素清晰（nearest neighbor）
- * 64x32 旧版皮肤会在下半部分留白，不会被拉伸。
- */
-function normalizeSkinTexture(img: HTMLImageElement): string {
-  const srcW = img.naturalWidth;
-  const srcH = img.naturalHeight;
-  const legacy = srcH < srcW; // 64x32 等旧版皮肤
-
-  const temp = document.createElement("canvas");
-  temp.width = 64;
-  temp.height = 64;
-  const tctx = temp.getContext("2d");
-  if (!tctx) return img.src;
-  tctx.imageSmoothingEnabled = false;
-  tctx.drawImage(img, 0, 0, 64, legacy ? 32 : 64);
-
-  const out = document.createElement("canvas");
-  out.width = 256;
-  out.height = 256;
-  const octx = out.getContext("2d");
-  if (!octx) return img.src;
-  octx.imageSmoothingEnabled = false;
-  octx.drawImage(temp, 0, 0, 256, 256);
-
-  return out.toDataURL("image/png");
-}
-
-// ============================================================
-// UV 贴图坐标（Minecraft 64x64 标准皮肤布局）
-// 格式：[x, y, w, h]（单位：Minecraft 像素）
-// ============================================================
-
-type UV = [number, number, number, number];
-
-interface CubeUV {
-  top: UV; bottom: UV;
-  right: UV; front: UV; left: UV; back: UV;
-}
-
 const HEAD: CubeUV = {
   top: [8, 0, 8, 8], bottom: [16, 0, 8, 8],
   right: [0, 8, 8, 8], front: [8, 8, 8, 8],
   left: [16, 8, 8, 8], back: [24, 8, 8, 8],
 };
+
 const HEAD_HAT: CubeUV = {
   top: [40, 0, 8, 8], bottom: [48, 0, 8, 8],
   right: [32, 8, 8, 8], front: [40, 8, 8, 8],
@@ -169,6 +71,7 @@ const BODY: CubeUV = {
   right: [16, 20, 4, 12], front: [20, 20, 8, 12],
   left: [28, 20, 4, 12], back: [32, 20, 8, 12],
 };
+
 const BODY_OVERLAY: CubeUV = {
   top: [20, 32, 8, 4], bottom: [28, 32, 8, 4],
   right: [16, 36, 4, 12], front: [20, 36, 8, 12],
@@ -180,6 +83,7 @@ const RARM: CubeUV = {
   right: [40, 20, 4, 12], front: [44, 20, 4, 12],
   left: [48, 20, 4, 12], back: [52, 20, 4, 12],
 };
+
 const RARM_OVERLAY: CubeUV = {
   top: [44, 32, 4, 4], bottom: [48, 32, 4, 4],
   right: [40, 36, 4, 12], front: [44, 36, 4, 12],
@@ -191,6 +95,7 @@ const LARM: CubeUV = {
   right: [32, 52, 4, 12], front: [36, 52, 4, 12],
   left: [40, 52, 4, 12], back: [44, 52, 4, 12],
 };
+
 const LARM_OVERLAY: CubeUV = {
   top: [52, 48, 4, 4], bottom: [56, 48, 4, 4],
   right: [48, 52, 4, 12], front: [52, 52, 4, 12],
@@ -202,6 +107,7 @@ const RLEG: CubeUV = {
   right: [0, 20, 4, 12], front: [4, 20, 4, 12],
   left: [8, 20, 4, 12], back: [12, 20, 4, 12],
 };
+
 const RLEG_OVERLAY: CubeUV = {
   top: [4, 32, 4, 4], bottom: [8, 32, 4, 4],
   right: [0, 36, 4, 12], front: [4, 36, 4, 12],
@@ -213,6 +119,7 @@ const LLEG: CubeUV = {
   right: [16, 52, 4, 12], front: [20, 52, 4, 12],
   left: [24, 52, 4, 12], back: [28, 52, 4, 12],
 };
+
 const LLEG_OVERLAY: CubeUV = {
   top: [4, 48, 4, 4], bottom: [8, 48, 4, 4],
   right: [0, 52, 4, 12], front: [4, 52, 4, 12],
@@ -224,114 +131,191 @@ const RARM_SLIM: CubeUV = {
   right: [40, 20, 4, 12], front: [44, 20, 3, 12],
   left: [47, 20, 4, 12], back: [51, 20, 3, 12],
 };
+
 const RARM_SLIM_OVERLAY: CubeUV = {
   top: [44, 32, 3, 4], bottom: [47, 32, 3, 4],
   right: [40, 36, 4, 12], front: [44, 36, 3, 12],
   left: [47, 36, 4, 12], back: [51, 36, 3, 12],
 };
+
 const LARM_SLIM: CubeUV = {
   top: [36, 48, 3, 4], bottom: [39, 48, 3, 4],
   right: [32, 52, 4, 12], front: [36, 52, 3, 12],
   left: [39, 52, 4, 12], back: [43, 52, 3, 12],
 };
+
 const LARM_SLIM_OVERLAY: CubeUV = {
   top: [52, 48, 3, 4], bottom: [55, 48, 3, 4],
   right: [48, 52, 4, 12], front: [52, 52, 3, 12],
   left: [55, 52, 4, 12], back: [59, 52, 3, 12],
 };
 
-// ============================================================
-// 3D Cube 组件
-// ============================================================
+/*
+ * 外层贴图比内层大 0.5 个单位，对应游戏里帽子和衣物的外扩量。
+ */
+const SHELL = 0.5;
 
-interface CubeProps {
-  skinUrl: string;
-  cx: number; cy: number; cz: number;
-  w: number; h: number; d: number;
-  uv: CubeUV;
-  outer?: boolean;
+/**
+ * 按 Steve / Alex 两种模型组装部件。
+ * 手臂与身体边缘贴合，不再额外留缝，避免出现“浮空手臂”。
+ */
+function buildParts(isSlim: boolean): Part[] {
+  const armW = isSlim ? 3 : 4;
+
+  return [
+    { x0: -4, x1: 4, y0: 0, y1: 8, z0: -4, z1: 4, uv: HEAD },
+    {
+      x0: -4 - SHELL, x1: 4 + SHELL,
+      y0: -SHELL, y1: 8 + SHELL,
+      z0: -4 - SHELL, z1: 4 + SHELL,
+      uv: HEAD_HAT,
+    },
+    { x0: -4, x1: 4, y0: 8, y1: 20, z0: -2, z1: 2, uv: BODY },
+    {
+      x0: -4 - SHELL, x1: 4 + SHELL,
+      y0: 8 - SHELL, y1: 20 + SHELL,
+      z0: -2 - SHELL, z1: 2 + SHELL,
+      uv: BODY_OVERLAY,
+    },
+    { x0: -4 - armW, x1: -4, y0: 8, y1: 20, z0: -2, z1: 2, uv: isSlim ? RARM_SLIM : RARM },
+    {
+      x0: -4 - armW - SHELL, x1: -4 + SHELL,
+      y0: 8 - SHELL, y1: 20 + SHELL,
+      z0: -2 - SHELL, z1: 2 + SHELL,
+      uv: isSlim ? RARM_SLIM_OVERLAY : RARM_OVERLAY,
+    },
+    { x0: 4, x1: 4 + armW, y0: 8, y1: 20, z0: -2, z1: 2, uv: isSlim ? LARM_SLIM : LARM },
+    {
+      x0: 4 - SHELL, x1: 4 + armW + SHELL,
+      y0: 8 - SHELL, y1: 20 + SHELL,
+      z0: -2 - SHELL, z1: 2 + SHELL,
+      uv: isSlim ? LARM_SLIM_OVERLAY : LARM_OVERLAY,
+    },
+    { x0: -4, x1: 0, y0: 20, y1: 32, z0: -2, z1: 2, uv: RLEG },
+    {
+      x0: -4 - SHELL, x1: 0 + SHELL,
+      y0: 20 - SHELL, y1: 32 + SHELL,
+      z0: -2 - SHELL, z1: 2 + SHELL,
+      uv: RLEG_OVERLAY,
+    },
+    { x0: 0, x1: 4, y0: 20, y1: 32, z0: -2, z1: 2, uv: LLEG },
+    {
+      x0: 0 - SHELL, x1: 4 + SHELL,
+      y0: 20 - SHELL, y1: 32 + SHELL,
+      z0: -2 - SHELL, z1: 2 + SHELL,
+      uv: LLEG_OVERLAY,
+    },
+  ];
 }
 
-function CubeFace({ uvRect, w, h, transform, skinUrl }: {
-  uvRect: UV; w: number; h: number; transform: string; skinUrl: string;
-}) {
-  return (
-    <div
-      className="absolute pixelated"
-      style={{
-        width: w,
-        height: h,
-        left: -w / 2,
-        top: -h / 2,
-        backgroundImage: `url(${skinUrl})`,
-        backgroundSize: `${64 * TEX_SCALE}px ${64 * TEX_SCALE}px`,
-        backgroundPosition: `${-uvRect[0] * TEX_SCALE}px ${-uvRect[1] * TEX_SCALE}px`,
-        backgroundRepeat: "no-repeat",
-        transform,
-        backfaceVisibility: "hidden",
-      }}
-    />
-  );
+/**
+ * 为每个立方体生成六个面。
+ * UV 的左上角对应面片的 p0，右下角对应 p2，因此背面与侧面需要按观察方向
+ * 调整角点顺序，贴图才不会左右镜像。
+ */
+function buildFaces(part: Part): Face[] {
+  const { x0, x1, y0, y1, z0, z1, uv } = part;
+
+  return [
+    {
+      corners: [
+        { x: x0, y: y0, z: z1 }, { x: x1, y: y0, z: z1 },
+        { x: x1, y: y1, z: z1 }, { x: x0, y: y1, z: z1 },
+      ],
+      uv: uv.front,
+      normal: { x: 0, y: 0, z: 1 },
+      shade: 0,
+    },
+    {
+      corners: [
+        { x: x1, y: y0, z: z0 }, { x: x0, y: y0, z: z0 },
+        { x: x0, y: y1, z: z0 }, { x: x1, y: y1, z: z0 },
+      ],
+      uv: uv.back,
+      normal: { x: 0, y: 0, z: -1 },
+      shade: 0.14,
+    },
+    {
+      corners: [
+        { x: x1, y: y0, z: z1 }, { x: x1, y: y0, z: z0 },
+        { x: x1, y: y1, z: z0 }, { x: x1, y: y1, z: z1 },
+      ],
+      uv: uv.right,
+      normal: { x: 1, y: 0, z: 0 },
+      shade: 0.1,
+    },
+    {
+      corners: [
+        { x: x0, y: y0, z: z0 }, { x: x0, y: y0, z: z1 },
+        { x: x0, y: y1, z: z1 }, { x: x0, y: y1, z: z0 },
+      ],
+      uv: uv.left,
+      normal: { x: -1, y: 0, z: 0 },
+      shade: 0.16,
+    },
+    {
+      corners: [
+        { x: x0, y: y0, z: z0 }, { x: x1, y: y0, z: z0 },
+        { x: x1, y: y0, z: z1 }, { x: x0, y: y0, z: z1 },
+      ],
+      uv: uv.top,
+      normal: { x: 0, y: -1, z: 0 },
+      shade: 0.05,
+    },
+    {
+      corners: [
+        { x: x0, y: y1, z: z1 }, { x: x1, y: y1, z: z1 },
+        { x: x1, y: y1, z: z0 }, { x: x0, y: y1, z: z0 },
+      ],
+      uv: uv.bottom,
+      normal: { x: 0, y: 1, z: 0 },
+      shade: 0.26,
+    },
+  ];
 }
 
-function Cube({ skinUrl, cx, cy, cz, w, h, d, uv, outer }: CubeProps) {
-  const scale = outer ? 1.05 : 1;
-  const ow = w * scale;
-  const oh = h * scale;
-  const od = d * scale;
+/**
+ * 平行投影：先绕竖直轴偏航，再绕水平轴俯仰，最后丢弃深度得到屏幕坐标。
+ * 这种投影下每个面都是平行四边形，可以用 Canvas 仿射变换直接贴图。
+ */
+function rotatePoint(point: Point3, yaw: number, pitch: number): Point3 {
+  const cosYaw = Math.cos(yaw);
+  const sinYaw = Math.sin(yaw);
+  const cosPitch = Math.cos(pitch);
+  const sinPitch = Math.sin(pitch);
 
-  const faces = useMemo(() => [
-    { w: ow, h: oh, t: `translateZ(${od / 2}px)`, uv: uv.front },
-    { w: ow, h: oh, t: `rotateY(180deg) translateZ(${od / 2}px)`, uv: uv.back },
-    { w: od, h: oh, t: `rotateY(90deg) translateZ(${ow / 2}px)`, uv: uv.right },
-    { w: od, h: oh, t: `rotateY(-90deg) translateZ(${ow / 2}px)`, uv: uv.left },
-    { w: ow, h: od, t: `rotateX(90deg) translateZ(${oh / 2}px)`, uv: uv.top },
-    { w: ow, h: od, t: `rotateX(-90deg) translateZ(${oh / 2}px)`, uv: uv.bottom },
-  ], [ow, oh, od, uv]);
+  const x = point.x * cosYaw + point.z * sinYaw;
+  const z = -point.x * sinYaw + point.z * cosYaw;
+  const y = point.y * cosPitch - z * sinPitch;
 
-  return (
-    <div
-      className="absolute"
-      style={{
-        transformStyle: "preserve-3d",
-        transform: `translate3d(${cx}px, ${cy}px, ${cz}px)`,
-      }}
-    >
-      {faces.map((face, i) => (
-        <CubeFace key={i} uvRect={face.uv} w={face.w} h={face.h} transform={face.t} skinUrl={skinUrl} />
-      ))}
-    </div>
-  );
+  return { x, y, z: point.y * sinPitch + z * cosPitch };
 }
 
-function BodyPart({
-  skinUrl, cx, cy, cz, w, h, d, uvInner, uvOuter,
-}: {
-  skinUrl: string; cx: number; cy: number; cz: number;
-  w: number; h: number; d: number;
-  uvInner: CubeUV; uvOuter: CubeUV;
-}) {
-  return (
-    <>
-      <Cube skinUrl={skinUrl} cx={cx} cy={cy} cz={cz} w={w} h={h} d={d} uv={uvInner} />
-      <Cube skinUrl={skinUrl} cx={cx} cy={cy} cz={cz} w={w} h={h} d={d} uv={uvOuter} outer />
-    </>
-  );
+/**
+ * 将 64×32 的旧皮肤也规范化为 64×64，缺失的下半部分保持透明。
+ */
+function normalizeSkinTexture(img: HTMLImageElement): HTMLCanvasElement {
+  const legacy = img.naturalHeight < img.naturalWidth;
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, 0, 0, 64, legacy ? 32 : 64);
+  return canvas;
 }
-
-// ============================================================
-// 完整皮肤模型
-// ============================================================
 
 export function SkinModel3D({ account, size = 96, className = "" }: SkinModel3DProps) {
   const { t } = useTranslation();
-  const [skinUrl, setSkinUrl] = useState<string | null>(null);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [isSlim, setIsSlim] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const [rotation, setRotation] = useState({ x: -10, y: 30 });
-  const [isDragging, setIsDragging] = useState(false);
-  const lastPos = useRef({ x: 0, y: 0 });
+  const [skin, setSkin] = useState<HTMLCanvasElement | null>(null);
+  const [isSlim, setIsSlim] = useState(false);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [camera, setCamera] = useState({ yaw: -0.35, pitch: 0.12, zoom: 1 });
+  const draggingRef = useRef(false);
+  const lastPosRef = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     if (!account) {
@@ -342,170 +326,210 @@ export function SkinModel3D({ account, size = 96, className = "" }: SkinModel3DP
     setStatus("loading");
     let cancelled = false;
 
+    const apply = (img: HTMLImageElement, slim: boolean) => {
+      if (cancelled) return;
+      setSkin(normalizeSkinTexture(img));
+      setIsSlim(slim);
+      setStatus("ready");
+    };
+
     const cached = getCachedSkin(account.id);
-    if (cached) {
-      setSkinUrl(cached.skinDataUrl);
-      setIsSlim(cached.isSlim);
-      setStatus("loaded");
-      return;
+    if (cached?.skinDataUrl) {
+      loadImage(cached.skinDataUrl)
+        .then((img) => apply(img, cached.isSlim))
+        .catch(() => setStatus("error"));
+      return () => {
+        cancelled = true;
+      };
     }
 
     (async () => {
-      const img = await loadSkinTexture(account);
-      if (!img || cancelled) {
-        if (!cancelled) setStatus("error");
-        return;
-      }
-
-      const slim = detectSlimFromPixels(img);
-      const normalized = normalizeSkinTexture(img);
-      if (!cancelled) {
+      try {
+        const img = await loadSkinForAccount(account);
+        if (cancelled) return;
+        const slim = detectSlimFromImage(img);
         cacheSkin(account.id, img);
-        setSkinUrl(normalized);
-        setIsSlim(slim);
-        setStatus("loaded");
+        apply(img, slim);
+      } catch {
+        if (!cancelled) setStatus("error");
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [account]);
 
-  // 鼠标/触摸交互
   useEffect(() => {
     const el = wrapperRef.current;
     if (!el) return;
 
-    const onPointerDown = (e: PointerEvent) => {
-      setIsDragging(true);
-      lastPos.current = { x: e.clientX, y: e.clientY };
-      el.setPointerCapture(e.pointerId);
+    el.style.touchAction = "none";
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      draggingRef.current = true;
+      lastPosRef.current = { x: event.clientX, y: event.clientY };
+      el.setPointerCapture(event.pointerId);
     };
 
-    const onPointerMove = (e: PointerEvent) => {
-      if (!isDragging) return;
-      const dx = e.clientX - lastPos.current.x;
-      const dy = e.clientY - lastPos.current.y;
-      lastPos.current = { x: e.clientX, y: e.clientY };
-
-      setRotation((r) => ({
-        x: Math.max(-90, Math.min(90, r.x - dy * 0.5)),
-        y: (r.y + dx * 0.5) % 360,
+    const onPointerMove = (event: PointerEvent) => {
+      if (!draggingRef.current) return;
+      const dx = event.clientX - lastPosRef.current.x;
+      const dy = event.clientY - lastPosRef.current.y;
+      lastPosRef.current = { x: event.clientX, y: event.clientY };
+      setCamera((current) => ({
+        yaw: current.yaw + dx * 0.012,
+        pitch: Math.max(-0.6, Math.min(0.6, current.pitch - dy * 0.008)),
+        zoom: current.zoom,
       }));
     };
 
-    const onPointerUp = () => setIsDragging(false);
+    const onPointerUp = () => {
+      draggingRef.current = false;
+    };
+
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      setCamera((current) => ({
+        ...current,
+        zoom: Math.max(0.75, Math.min(1.5, current.zoom + (event.deltaY > 0 ? -0.06 : 0.06))),
+      }));
+    };
 
     el.addEventListener("pointerdown", onPointerDown);
     el.addEventListener("pointermove", onPointerMove);
     el.addEventListener("pointerup", onPointerUp);
-    el.addEventListener("pointerleave", onPointerUp);
+    el.addEventListener("pointercancel", onPointerUp);
+    el.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
       el.removeEventListener("pointerdown", onPointerDown);
       el.removeEventListener("pointermove", onPointerMove);
       el.removeEventListener("pointerup", onPointerUp);
-      el.removeEventListener("pointerleave", onPointerUp);
+      el.removeEventListener("pointercancel", onPointerUp);
+      el.removeEventListener("wheel", onWheel);
     };
-  }, [isDragging]);
+  }, []);
 
-  if (!account || status === "error") {
-    return (
-      <div
-        style={{ width: size, height: size }}
-        className={`rounded-2xl bg-surface-container flex items-center justify-center ring-2 ring-surface/80 shadow-md ${className}`}
-      >
-        <span className="text-xs text-on-surface-variant select-none">
-          {t("account.skinModelSteve")}
-        </span>
-      </div>
-    );
-  }
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx || !skin) return;
 
-  const armW = isSlim ? 3 : 4;
-  const px = TEX_SCALE;
+    const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = false;
 
-  // 模型总高度 = 头(8) + 身体(12) + 腿(12) = 32 个 Minecraft 像素
-  const modelHeightPx = 32 * px;
-  const modelScale = (size * 0.82) / modelHeightPx;
-  const centerX = size / 2;
-  const centerY = size * 0.5 + 2 * px * modelScale;
+    const parts = buildParts(isSlim);
+    const faces = parts.flatMap((part) => buildFaces(part));
 
-  const cursorClass = isDragging ? "cursor-grabbing" : "cursor-grab";
+    /*
+     * 模型坐标系以脚底为原点向下，整体高度 32 单位。
+     * 旋转前先把竖直中心移到原点，避免俯仰时模型整体漂出画布。
+     */
+    const centerY = 16;
+    const visible: Array<{ face: Face; points: Point3[]; depth: number }> = [];
+
+    for (const face of faces) {
+      const normal = rotatePoint(face.normal, camera.yaw, camera.pitch);
+      if (normal.z <= 0.001) continue;
+
+      const points = face.corners.map((corner) =>
+        rotatePoint({ x: corner.x, y: corner.y - centerY, z: corner.z }, camera.yaw, camera.pitch),
+      );
+      const depth = points.reduce((sum, point) => sum + point.z, 0) / points.length;
+      visible.push({ face, points, depth });
+    }
+
+    if (visible.length === 0) return;
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const item of visible) {
+      for (const point of item.points) {
+        minX = Math.min(minX, point.x);
+        maxX = Math.max(maxX, point.x);
+        minY = Math.min(minY, point.y);
+        maxY = Math.max(maxY, point.y);
+      }
+    }
+
+    const spanX = Math.max(maxX - minX, 1);
+    const spanY = Math.max(maxY - minY, 1);
+    const scale = Math.min(
+      (size * 0.84) / spanX,
+      (size * 0.84) / spanY,
+    ) * camera.zoom;
+    const offsetX = size / 2 - ((minX + maxX) / 2) * scale;
+    const offsetY = size / 2 - ((minY + maxY) / 2) * scale;
+
+    visible.sort((a, b) => a.depth - b.depth);
+
+    for (const { face, points } of visible) {
+      const [p0, p1, , p3] = points;
+      const [, , uw, vh] = face.uv;
+
+      const axisUx = (p1.x - p0.x) * scale / uw;
+      const axisUy = (p1.y - p0.y) * scale / uw;
+      const axisVx = (p3.x - p0.x) * scale / vh;
+      const axisVy = (p3.y - p0.y) * scale / vh;
+
+      ctx.setTransform(
+        dpr * axisUx,
+        dpr * axisUy,
+        dpr * axisVx,
+        dpr * axisVy,
+        dpr * (offsetX + p0.x * scale),
+        dpr * (offsetY + p0.y * scale),
+      );
+      ctx.drawImage(skin, face.uv[0], face.uv[1], uw, vh, 0, 0, uw, vh);
+
+      if (face.shade > 0) {
+        ctx.fillStyle = `rgba(0, 0, 0, ${face.shade})`;
+        ctx.fillRect(0, 0, uw, vh);
+      }
+    }
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }, [skin, isSlim, camera, size]);
+
+  const cursorClass = draggingRef.current ? "cursor-grabbing" : "cursor-grab";
 
   return (
     <div
       ref={wrapperRef}
-      style={{ width: size, height: size, perspective: 800 }}
-      className={`relative rounded-2xl bg-surface-container overflow-hidden ring-2 ring-surface/80 shadow-md select-none touch-none ${cursorClass} ${className}`}
+      style={{ width: size, height: size }}
+      className={`relative rounded-btn overflow-hidden select-none touch-none ${cursorClass} ${className}`}
       title={isSlim ? t("account.skinModelAlex") : t("account.skinModelSteve")}
     >
+      <div className="absolute inset-0 bg-primary/[0.06]" />
+      <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/5 to-transparent" />
+
       {status === "loading" && (
-        <div className="absolute inset-0 flex items-center justify-center bg-surface-container animate-pulse">
-          <span className="text-xs text-on-surface-variant select-none">
-            {t("account.skinModelSteve")}
-          </span>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-6 h-6 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
         </div>
       )}
 
-      {skinUrl && status === "loaded" && (
-        <div
-          className="absolute"
-          style={{
-            width: 0, height: 0, left: 0, top: 0,
-            transformStyle: "preserve-3d",
-            transform: `translate(${centerX}px, ${centerY}px) scale(${modelScale}) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)`,
-          }}
-        >
-          {/* 头部 */}
-          <BodyPart
-            skinUrl={skinUrl}
-            cx={0} cy={-10 * px} cz={0}
-            w={8 * px} h={8 * px} d={8 * px}
-            uvInner={HEAD} uvOuter={HEAD_HAT}
-          />
-
-          {/* 身体 */}
-          <BodyPart
-            skinUrl={skinUrl}
-            cx={0} cy={0} cz={0}
-            w={8 * px} h={12 * px} d={4 * px}
-            uvInner={BODY} uvOuter={BODY_OVERLAY}
-          />
-
-          {/* 右臂 */}
-          <BodyPart
-            skinUrl={skinUrl}
-            cx={-(4 + armW / 2) * px} cy={0} cz={0}
-            w={armW * px} h={12 * px} d={4 * px}
-            uvInner={isSlim ? RARM_SLIM : RARM}
-            uvOuter={isSlim ? RARM_SLIM_OVERLAY : RARM_OVERLAY}
-          />
-
-          {/* 左臂 */}
-          <BodyPart
-            skinUrl={skinUrl}
-            cx={(4 + armW / 2) * px} cy={0} cz={0}
-            w={armW * px} h={12 * px} d={4 * px}
-            uvInner={isSlim ? LARM_SLIM : LARM}
-            uvOuter={isSlim ? LARM_SLIM_OVERLAY : LARM_OVERLAY}
-          />
-
-          {/* 右腿 */}
-          <BodyPart
-            skinUrl={skinUrl}
-            cx={-2 * px} cy={12 * px} cz={0}
-            w={4 * px} h={12 * px} d={4 * px}
-            uvInner={RLEG} uvOuter={RLEG_OVERLAY}
-          />
-
-          {/* 左腿 */}
-          <BodyPart
-            skinUrl={skinUrl}
-            cx={2 * px} cy={12 * px} cz={0}
-            w={4 * px} h={12 * px} d={4 * px}
-            uvInner={LLEG} uvOuter={LLEG_OVERLAY}
-          />
+      {status === "error" && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-on-surface-subtle">
+          <User size={Math.max(18, size * 0.26)} className="opacity-60" />
         </div>
+      )}
+
+      {skin && status === "ready" && (
+        <canvas
+          ref={canvasRef}
+          style={{ width: size, height: size }}
+          className="absolute inset-0"
+          aria-label={isSlim ? t("account.skinModelAlex") : t("account.skinModelSteve")}
+        />
       )}
     </div>
   );

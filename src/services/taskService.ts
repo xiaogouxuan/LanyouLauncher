@@ -6,6 +6,17 @@ import type { TaskStatus, TaskType } from "@/types/task";
 
 let unlistenDownload: UnlistenFn | null = null;
 
+/** 被用户主动取消的任务，忽略其后续进度事件，避免已移除的任务重新出现 */
+const ignoredTaskIds = new Set<string>();
+
+export function ignoreTaskEvents(taskId: string) {
+  ignoredTaskIds.add(taskId);
+}
+
+export function resumeTaskEvents(taskId: string) {
+  ignoredTaskIds.delete(taskId);
+}
+
 function translateStatus(status: string): string {
   const translated = t(status);
   // 如果翻译缺失（返回原 key），给出一个可读默认值
@@ -61,6 +72,7 @@ export const taskService = {
         const { id, task_type, total, current, status, speed, stage } = event.payload;
         const store = useTaskStore.getState();
         const taskId = `${task_type}:${id}`;
+        if (ignoredTaskIds.has(taskId)) return;
         const progress = total > 0 ? Math.round((current / total) * 100) : 0;
         const taskStatus = getTaskStatus(current, total, status);
         const message = translateStatus(stage || status);
