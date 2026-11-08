@@ -106,6 +106,7 @@ pub fn run() {
             commands::system::open_game_dir,
             // 更新
             commands::update::check_update,
+            commands::update::install_update,
             // EasyTier 联机
             commands::easytier::get_easytier_status,
             commands::easytier::install_easytier,

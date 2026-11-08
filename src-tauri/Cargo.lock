@@ -2274,7 +2274,7 @@ dependencies = [
 
 [[package]]
 name = "lanyou-launcher"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2286,6 +2286,7 @@ dependencies = [
  "open",
  "rand 0.8.6",
  "reqwest 0.12.28",
+ "semver",
  "serde",
  "serde_json",
  "sha2",

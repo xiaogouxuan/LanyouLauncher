@@ -1,10 +1,12 @@
 import { RouterProvider } from "react-router-dom";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { router } from "@/router";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { SplashScreen, AppReveal } from "@/components/common/SplashScreen";
 import { ToastProvider } from "@/components/ui/Toast";
+import { UpdateDialog } from "@/components/update/UpdateDialog";
+import { updateService, type UpdateRelease } from "@/services/updateService";
 import { useUIStore } from "@/stores/uiStore";
 import { useAccountStore } from "@/stores/accountStore";
 import { useVersionStore } from "@/stores/versionStore";
@@ -266,6 +268,40 @@ function sampleLuminance(
   return count > 0 ? total / count / 255 : null;
 }
 
+/**
+ * 启动后自动检查更新：开启「自动检查更新」时，延迟数秒请求 Gitee 主仓库，
+ * 有更新则弹出带更新日志的提示弹窗，失败时保持静默。
+ */
+function UpdateChecker() {
+  const [release, setRelease] = useState<UpdateRelease | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        if (!useSettingsStore.getState().settings.auto_update) return;
+        const result = await updateService.checkUpdate();
+        if (!cancelled && result) setRelease(result);
+      } catch {
+        // 启动阶段网络不可用时不打扰用户
+      }
+    }, 4000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  return (
+    <UpdateDialog
+      open={Boolean(release)}
+      release={release}
+      onClose={() => setRelease(null)}
+    />
+  );
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -276,6 +312,7 @@ export default function App() {
             <AppReveal>
               <RouterProvider router={router} />
             </AppReveal>
+            <UpdateChecker />
           </ToastProvider>
         </ThemeProvider>
       </DataInitializer>

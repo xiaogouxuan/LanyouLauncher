@@ -1,10 +1,10 @@
 [package]
 name = "lanyou-launcher"
-version = "0.5.0"
+version = "0.5.1"
 description = "LanyouLauncher - A modern Minecraft launcher"
 authors = ["1B2T服务器维护团队"]
 license = "GPL-3.0-only"
-repository = "https://github.com/xiaogouxuan/LanyouLauncher"
+repository = "https://gitee.com/xiaogouxuan/lanyou-launcher"
 edition = "2021"
 rust-version = "1.77.2"
 
@@ -26,6 +26,7 @@ tauri-plugin-store = "2"
 tauri-plugin-log = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+semver = "1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4", "v3"] }

@@ -669,11 +669,20 @@
     "title": "New Version Available",
     "currentVersion": "Current Version",
     "newVersion": "Latest Version",
-    "updateNow": "Update Now",
+    "updateNow": "Go to Download",
     "later": "Later",
     "checking": "Checking for updates...",
     "noUpdate": "Already up to date",
-    "checkFailed": "Update check failed"
+    "checkFailed": "Update check failed",
+    "changelog": "Changelog",
+    "noChangelog": "No release notes were provided for this update.",
+    "publishedAt": "Published",
+    "sourceGitee": "Gitee (Primary)",
+    "sourceGithub": "GitHub (Mirror)",
+    "downloading": "Downloading update {{percent}}%",
+    "installing": "Installing and restarting the launcher…",
+    "updateFailed": "Update failed: {{detail}}",
+    "manualDownload": "Manual download"
   },
   "cloud": {
     "title": "Lanyou Cloud",
@@ -893,7 +902,10 @@
     "update": {
       "checkNetworkFailed": "Update check failed (network error): {{detail}}",
       "checkHttpFailed": "Update check failed (HTTP {{status}}): {{url}}",
-      "parseUpdateFailed": "Failed to parse update info: {{detail}}"
+      "parseUpdateFailed": "Failed to parse update info: {{detail}}",
+      "downloadFailed": "Failed to download the update: {{detail}}",
+      "installFailed": "Failed to start the updater: {{detail}}",
+      "unsafeSource": "Untrusted update source: {{detail}}"
     },
     "version": {
       "createVersionDirFailed": "Failed to create version directory: {{detail}}",

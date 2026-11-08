@@ -19,14 +19,15 @@ import { Switch } from "@/components/ui/Switch";
 import { Select } from "@/components/ui/Select";
 import { Slider } from "@/components/ui/Slider";
 import { PageTransition } from "@/components/common/PageTransition";
+import { UpdateDialog } from "@/components/update/UpdateDialog";
 import { useTranslation } from "@/i18n";
 import { useUIStore } from "@/stores/uiStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToast } from "@/components/ui/Toast";
-import { APP_NAME, APP_VERSION, GITHUB_REPO, BILIBILI_URL, CONTACT_EMAIL } from "@/utils/constants";
+import { APP_NAME, APP_VERSION, GITEE_REPO, BILIBILI_URL, CONTACT_EMAIL } from "@/utils/constants";
 import { formatMemory } from "@/utils/format";
 import { settingsService, type SystemInfo } from "@/services/settingsService";
-import { updateService } from "@/services/updateService";
+import { updateService, type UpdateRelease } from "@/services/updateService";
 import type { ThemeMode, DownloadSource } from "@/types/settings";
 import { BUILTIN_WALLPAPERS, accessibleAccent } from "@/lib/wallpaperTheme";
 
@@ -107,6 +108,7 @@ export default function Settings() {
 
   const [detectingJava, setDetectingJava] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateRelease, setUpdateRelease] = useState<UpdateRelease | null>(null);
   const [selectingBg, setSelectingBg] = useState(false);
   const [downloadingJava, setDownloadingJava] = useState<number | null>(null);
   const [detectedJava, setDetectedJava] = useState<[string, string][]>([]);
@@ -174,7 +176,7 @@ export default function Settings() {
     try {
       const release = await updateService.checkUpdate();
       if (release) {
-        showToast("info", t("settings.newVersionFound", { version: release.tag_name }));
+        setUpdateRelease(release);
       } else {
         showToast("success", t("update.noUpdate"));
       }
@@ -529,7 +531,7 @@ export default function Settings() {
         <Section icon={<Info size={15} />} title={t("settings.about")}>
           <button
             type="button"
-            onClick={() => handleOpenUrl(GITHUB_REPO)}
+            onClick={() => handleOpenUrl(GITEE_REPO)}
             className="w-full flex items-center justify-between gap-3 px-4 py-3 border-b border-outline-variant hover:bg-surface-hover/50 transition-colors text-left"
           >
             <div className="flex items-center gap-3">
@@ -572,14 +574,20 @@ export default function Settings() {
               {t("settings.openSource")}:{" "}
               <button
                 type="button"
-                onClick={() => handleOpenUrl(GITHUB_REPO)}
+                onClick={() => handleOpenUrl(GITEE_REPO)}
                 className="text-primary hover:underline"
               >
-                {GITHUB_REPO}
+                {GITEE_REPO}
               </button>
             </p>
           </div>
         </Section>
+
+        <UpdateDialog
+          open={Boolean(updateRelease)}
+          release={updateRelease}
+          onClose={() => setUpdateRelease(null)}
+        />
       </div>
     </PageTransition>
   );
