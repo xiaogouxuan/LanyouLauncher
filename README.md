@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/xiaogouxuan/LanyouLauncher/releases"><img src="https://img.shields.io/github/v/release/xiaogouxuan/LanyouLauncher?include_prereleases&style=flat-square" alt="Release" /></a>
+  <a href="https://gitee.com/xiaogouxuan/lanyou-launcher"><img src="https://img.shields.io/badge/Gitee-%E5%9B%BD%E5%86%85%E9%95%9C%E5%83%8F-c71d23?style=flat-square" alt="Gitee" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/status-beta-orange?style=flat-square" alt="Status" />
   <img src="https://img.shields.io/badge/tauri-v2-ffc131?style=flat-square" alt="Tauri v2" />
@@ -132,7 +133,10 @@ LanyouLauncher 是一个基于 [Tauri v2](https://v2.tauri.app/) 的 Minecraft �
 
 ### 下载安装包
 
-前往 [GitHub Releases](https://github.com/xiaogouxuan/LanyouLauncher/releases) 下载最新版本：
+Gitee 为国内主仓库，GitHub 为备用镜像。前往以下任一处下载最新版本：
+
+- Gitee Releases（推荐）：https://gitee.com/xiaogouxuan/lanyou-launcher/releases
+- GitHub Releases（备用）：https://github.com/xiaogouxuan/LanyouLauncher/releases
 
 - Windows 安装版：`LanyouLauncher_0.5.0_x64-setup.exe`
 - Windows 便携版：`LanyouLauncher_0.5.0-portable.exe`
@@ -142,9 +146,9 @@ LanyouLauncher 是一个基于 [Tauri v2](https://v2.tauri.app/) 的 Minecraft �
 ### 从源码构建
 
 ```bash
-# 克隆仓库
-git clone https://github.com/xiaogouxuan/LanyouLauncher.git
-cd LanyouLauncher
+# 克隆仓库（Gitee 主仓库）
+git clone https://gitee.com/xiaogouxuan/lanyou-launcher.git
+cd lanyou-launcher
 
 # 安装前端依赖
 npm install
@@ -315,12 +319,15 @@ Windows 10/11 通常自带 WebView2。若缺失，请从微软官网安装 WebVi
 
 ### 反馈问题
 
-请在 [GitHub Issues](https://github.com/xiaogouxuan/LanyouLauncher/issues) 提交，并附上：
+请在 Gitee Issues（主）或 GitHub Issues（备用）提交，并附上：
 
 - 操作系统与版本
 - 启动器版本号
 - 问题描述与复现步骤
 - 相关截图或日志
+
+Gitee Issues：https://gitee.com/xiaogouxuan/lanyou-launcher/issues
+GitHub Issues：https://github.com/xiaogouxuan/LanyouLauncher/issues
 
 ### 提交代码
 
