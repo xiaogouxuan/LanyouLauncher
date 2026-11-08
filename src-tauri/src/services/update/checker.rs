@@ -147,7 +147,29 @@ pub async fn check_for_update(
     };
 
     match latest {
-        Some((version, release)) if version > current => Ok(Some(release)),
+        Some((version, mut release)) if version > current => {
+            // Gitee 的匿名接口有调用频率限制，超限后会回退到 GitHub。
+            // 此时仍把下载地址与发布页替换为 Gitee 对应地址，保证下载走国内主仓库。
+            if release.source == "github" {
+                if let Some(file) = release
+                    .download_url
+                    .as_deref()
+                    .and_then(|url| url.rsplit('/').next())
+                    .map(str::to_string)
+                {
+                    release.download_url = Some(format!(
+                        "https://gitee.com/xiaogouxuan/lanyou-launcher/releases/download/{}/{}",
+                        release.tag_name, file
+                    ));
+                }
+                release.html_url = format!(
+                    "https://gitee.com/xiaogouxuan/lanyou-launcher/releases/tag/{}",
+                    release.tag_name
+                );
+                release.source = "gitee".to_string();
+            }
+            Ok(Some(release))
+        }
         _ => Ok(None),
     }
 }

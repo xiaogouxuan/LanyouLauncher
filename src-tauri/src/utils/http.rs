@@ -4,7 +4,7 @@ use std::time::Duration;
 /// 创建统一的 HTTP 客户端，配置 TLS、连接复用和下载友好的超时
 pub fn create_http_client() -> Client {
     Client::builder()
-        .user_agent("LanyouLauncher/0.5.3")
+        .user_agent("LanyouLauncher/0.5.4")
         // 下载大文件不能再限制总时长，仅限制建连与单次读取，避免大文件中途被掐断
         .connect_timeout(Duration::from_secs(10))
         .read_timeout(Duration::from_secs(45))
