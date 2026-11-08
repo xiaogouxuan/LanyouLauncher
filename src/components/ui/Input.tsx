@@ -16,7 +16,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         )}
         <input
           ref={ref}
-          className={`h-8 px-2.5 rounded-input bg-surface-high text-on-surface border text-[13px]
+          className={`h-8 w-full px-2.5 rounded-input bg-surface-high text-on-surface border text-[13px]
             border-outline-variant placeholder:text-on-surface-subtle outline-none transition-colors duration-150
             hover:border-primary/40
             focus:border-primary focus:ring-1 focus:ring-primary/25

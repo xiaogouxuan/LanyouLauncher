@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
 import { CheckCircle2, AlertCircle, XCircle, X } from "lucide-react";
+import { parseI18nError } from "@/utils/i18nError";
 
 interface ToastMessage {
   id: string;
@@ -36,7 +37,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const showToast = useCallback((type: ToastMessage["type"], message: string) => {
     const id = Date.now().toString() + Math.random().toString(36).slice(2, 6);
-    setToasts((prev) => [...prev, { id, type, message }]);
+    setToasts((prev) => [...prev, { id, type, message: parseI18nError(message) }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 3200);

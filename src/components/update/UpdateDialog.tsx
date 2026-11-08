@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { Calendar, Download, Sparkles } from "lucide-react";
+import { Calendar, Download } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -112,8 +112,8 @@ export function UpdateDialog({ open, release, onClose }: UpdateDialogProps) {
     >
       <div className="space-y-3">
         <div className="flex items-center gap-2.5 rounded-card border border-outline-variant bg-surface px-3.5 py-3">
-          <span className="w-8 h-8 rounded-btn bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
-            <Sparkles size={16} />
+          <span className="w-8 h-8 rounded-btn bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+            <img src="/logo.png" alt="" className="w-5 h-5 object-contain" />
           </span>
           <div className="flex-1 min-w-0">
             <p className="text-[12px] text-on-surface-subtle">

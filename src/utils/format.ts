@@ -1,5 +1,6 @@
 import { t } from "@/i18n/useTranslation";
 import { useUIStore } from "@/stores/uiStore";
+import { parseI18nError } from "@/utils/i18nError";
 
 export const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return "0 B";
@@ -35,10 +36,10 @@ export const formatDate = (timestamp: number): string => {
 };
 
 export function formatError(error: unknown): string {
-  if (typeof error === "string") return error;
-  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return parseI18nError(error);
+  if (error instanceof Error) return parseI18nError(error.message);
   if (error && typeof error === "object") {
-    if ("message" in error) return String((error as { message: unknown }).message);
+    if ("message" in error) return parseI18nError(String((error as { message: unknown }).message));
     return JSON.stringify(error);
   }
   return String(error);

@@ -17,7 +17,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useVersionStore } from "@/stores/versionStore";
 import { modService } from "@/services/modService";
 import { formatError } from "@/utils/format";
-import type { ModInfo, ModSource, ModVersionInfo } from "@/types/mod";
+import type { ModInfo, ModVersionInfo } from "@/types/mod";
 import type { LoaderType } from "@/types/version";
 
 const GAME_VERSIONS = [
@@ -51,7 +51,6 @@ export default function Mods() {
 
   // 探索
   const [searchQuery, setSearchQuery] = useState("");
-  const [sourceFilter, setSourceFilter] = useState<ModSource | "all">("Modrinth");
   const [versionFilter, setVersionFilter] = useState("all");
   const [loaderFilter, setLoaderFilter] = useState<LoaderType | "all">("all");
   const [searchResults, setSearchResults] = useState<ModInfo[]>([]);
@@ -145,22 +144,14 @@ export default function Mods() {
       const version = versionFilter === "all" ? undefined : versionFilter;
       const loader = loaderFilter === "all" ? undefined : loaderFilter;
 
-      let results: ModInfo[] = [];
-      if (sourceFilter === "all" || sourceFilter === "Modrinth") {
-        const modrinth = await modService.searchModrinth("", version, loader);
-        results = results.concat(modrinth);
-      }
-      if (sourceFilter === "all" || sourceFilter === "CurseForge") {
-        const curseforge = await modService.searchCurseForge("", version, loader);
-        results = results.concat(curseforge);
-      }
-      setSearchResults(results);
+      const modrinth = await modService.searchModrinth("", version, loader);
+      setSearchResults(modrinth);
     } catch (error) {
       showToast("error", formatError(error));
     } finally {
       setSearching(false);
     }
-  }, [sourceFilter, versionFilter, loaderFilter, showToast]);
+  }, [versionFilter, loaderFilter, showToast]);
 
   // 进入探索页且搜索框为空时自动加载推荐
   useEffect(() => {
@@ -183,32 +174,7 @@ export default function Mods() {
       const version = versionFilter === "all" ? undefined : versionFilter;
       const loader = loaderFilter === "all" ? undefined : loaderFilter;
 
-      let results: ModInfo[] = [];
-      const hasChinese = /[\u4e00-\u9fa5]/.test(searchQuery);
-
-      if (hasChinese) {
-        showToast("info", t("mod.searchingBothSources"));
-        const [modrinthResult, curseforgeResult] = await Promise.allSettled([
-          modService.searchModrinth(searchQuery, version, loader),
-          modService.searchCurseForge(searchQuery, version, loader),
-        ]);
-        if (modrinthResult.status === "fulfilled") {
-          results = results.concat(modrinthResult.value);
-        }
-        if (curseforgeResult.status === "fulfilled") {
-          results = results.concat(curseforgeResult.value);
-        }
-      } else {
-        if (sourceFilter === "all" || sourceFilter === "Modrinth") {
-          const modrinth = await modService.searchModrinth(searchQuery, version, loader);
-          results = results.concat(modrinth);
-        }
-        if (sourceFilter === "all" || sourceFilter === "CurseForge") {
-          const curseforge = await modService.searchCurseForge(searchQuery, version, loader);
-          results = results.concat(curseforge);
-        }
-      }
-
+      const results = await modService.searchModrinth(searchQuery, version, loader);
       setSearchResults(results);
     } catch (error) {
       showToast("error", formatError(error));
@@ -359,12 +325,6 @@ export default function Mods() {
   const versionOptions = [
     { value: "", label: t("home.versionNotSelected") },
     ...installedVersions.map((v) => ({ value: v.id, label: v.id })),
-  ];
-
-  const sourceOptions = [
-    { value: "Modrinth", label: t("mod.sourceModrinth") },
-    { value: "CurseForge", label: t("mod.sourceCurseForge") },
-    { value: "all", label: t("mod.allSources") },
   ];
 
   const gameVersionOptions = [
@@ -552,8 +512,7 @@ export default function Mods() {
               </Button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Select options={sourceOptions} value={sourceFilter} onChange={(v) => setSourceFilter(v as ModSource | "all")} placeholder={t("mod.source")} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Select options={gameVersionOptions} value={versionFilter} onChange={setVersionFilter} placeholder={t("mod.versionFilter")} />
               <Select options={loaderOptions} value={loaderFilter} onChange={(v) => setLoaderFilter(v as LoaderType | "all")} placeholder={t("mod.loaderFilter")} />
             </div>
