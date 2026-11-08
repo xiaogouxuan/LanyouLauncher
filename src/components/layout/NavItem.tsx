@@ -33,7 +33,7 @@ export function NavItem({ to, icon: Icon, label, collapsed = false, trailing }: 
       {({ isActive }) => (
         <>
           {isActive && !collapsed && (
-            <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-[1px] bg-primary" />
+            <span className="nav-marker absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-[1px] bg-primary" />
           )}
           <span
             className={`flex items-center justify-center w-5 h-5 flex-shrink-0 transition-colors ${

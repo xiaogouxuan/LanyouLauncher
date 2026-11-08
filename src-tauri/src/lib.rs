@@ -62,6 +62,7 @@ pub fn run() {
             commands::account::select_account_skin,
             commands::account::clear_account_skin,
             commands::account::read_skin_data_url,
+            commands::account::resolve_account_skin,
             // 版本
             commands::version::get_manifest,
             commands::version::get_installed_versions,

@@ -175,7 +175,7 @@ export default function ModDetail() {
   );
 
   return (
-    <PageTransition>
+    <PageTransition variant="slide">
       <div className="p-5 space-y-3.5 h-full flex flex-col overflow-y-auto">
         <Button
           variant="text"

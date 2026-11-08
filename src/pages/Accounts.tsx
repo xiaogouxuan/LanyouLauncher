@@ -43,8 +43,8 @@ export default function Accounts() {
     try {
       const list = await accountService.getAccounts();
       setAccounts(list);
-      const active = list.find((account) => account.is_active);
-      if (active) setActiveAccount(active);
+      // 删除当前账号后必须同步清空，避免残留已删除的账号
+      setActiveAccount(list.find((account) => account.is_active) ?? null);
     } catch (error) {
       showToast("error", String(error));
     }
@@ -309,18 +309,15 @@ export default function Accounts() {
                       </span>
                     </div>
 
-                    <p className="text-[12px] text-on-surface-variant mt-1.5">
-                      {activeAccount.account_type === "Microsoft"
-                        ? formatExpiry(activeAccount)
-                        : activeAccount.account_type === "ThirdParty"
-                          ? t("account.thirdPartyServer", {
+                    {activeAccount.account_type !== "Offline" && (
+                      <p className="text-[12px] text-on-surface-variant mt-1.5">
+                        {activeAccount.account_type === "Microsoft"
+                          ? formatExpiry(activeAccount)
+                          : t("account.thirdPartyServer", {
                               server: activeAccount.auth_server ?? "",
-                            })
-                          : t("account.offlineDesc")}
-                    </p>
-                    <p className="text-[11px] text-on-surface-subtle mt-1 font-mono truncate">
-                      {t("account.idLabel")}: {activeAccount.id}
-                    </p>
+                            })}
+                      </p>
+                    )}
 
                     <div className="flex items-center gap-2 mt-3.5 flex-wrap">
                       {activeAccount.account_type === "Offline" && (
@@ -422,13 +419,13 @@ export default function Accounts() {
                         </span>
                         {accountBadges(account)}
                       </div>
-                      <p className="text-[11px] text-on-surface-subtle font-mono truncate mt-0.5">
-                        {account.account_type === "Microsoft"
-                          ? formatExpiry(account)
-                          : account.account_type === "ThirdParty"
-                            ? account.auth_server ?? account.id
-                            : account.id}
-                      </p>
+                      {account.account_type !== "Offline" && (
+                        <p className="text-[11px] text-on-surface-subtle font-mono truncate mt-0.5">
+                          {account.account_type === "Microsoft"
+                            ? formatExpiry(account)
+                            : account.auth_server ?? ""}
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       {account.account_type === "Microsoft" && (

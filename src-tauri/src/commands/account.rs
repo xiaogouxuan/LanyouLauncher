@@ -104,7 +104,19 @@ pub async fn delete_account(
     let mut accounts: Vec<Account> = serde_json::from_str(&content)
         .unwrap_or_default();
 
+    let was_active = accounts
+        .iter()
+        .any(|a| a.id == id && a.is_active);
+
     accounts.retain(|a| a.id != id);
+
+    // 删除的是当前账号时，自动把剩余的第一个账号设为活跃，
+    // 避免前端仍然保留已删除的账号作为“当前账号”。
+    if was_active {
+        if let Some(first) = accounts.first_mut() {
+            first.is_active = true;
+        }
+    }
 
     let new_content = serde_json::to_string_pretty(&accounts)
         .map_err(|e| i18n_err!("errors.account.serializeFailed", e))?;
@@ -112,6 +124,146 @@ pub async fn delete_account(
         .map_err(|e| i18n_err!("errors.account.writeFileFailed", e))?;
 
     Ok(())
+}
+
+/// 解析账号的真实皮肤，返回 PNG data URL
+///
+/// - 微软账号：从 Mojang sessionserver 读取官方皮肤
+/// - 外置登录：从认证服务器的 sessionserver 读取皮肤站皮肤
+/// - 离线账号：按用户名查询 Mojang 档案，若存在正版档案则使用其皮肤
+///
+/// 任意一步失败都返回 None，由前端回退到内置皮肤，不影响账号列表加载。
+#[tauri::command]
+pub async fn resolve_account_skin(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Option<String>, I18nError> {
+    let file_path = paths::get_accounts_file(&state.launcher_dir);
+    if !file_path.exists() {
+        return Ok(None);
+    }
+
+    let content = match std::fs::read_to_string(&file_path) {
+        Ok(content) => content,
+        Err(_) => return Ok(None),
+    };
+    let accounts: Vec<Account> = serde_json::from_str(&content).unwrap_or_default();
+    let account = match accounts.iter().find(|a| a.id == id) {
+        Some(account) => account,
+        None => return Ok(None),
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return Ok(None),
+    };
+
+    let skin_url = match account.account_type {
+        AccountType::Microsoft => {
+            let uuid = account.id.replace('-', "");
+            fetch_textures_skin(
+                &client,
+                &format!(
+                    "https://sessionserver.mojang.com/session/minecraft/profile/{}",
+                    uuid
+                ),
+            )
+            .await
+        }
+        AccountType::ThirdParty => match account.auth_server.as_deref() {
+            Some(server) if !server.is_empty() => {
+                let base = server.trim_end_matches('/');
+                let uuid = account.id.replace('-', "");
+                fetch_textures_skin(
+                    &client,
+                    &format!(
+                        "{}/sessionserver/session/minecraft/profile/{}?unsigned=false",
+                        base, uuid
+                    ),
+                )
+                .await
+            }
+            _ => None,
+        },
+        AccountType::Offline => match lookup_mojang_uuid(&client, &account.username).await {
+            Some(uuid) => {
+                fetch_textures_skin(
+                    &client,
+                    &format!(
+                        "https://sessionserver.mojang.com/session/minecraft/profile/{}",
+                        uuid
+                    ),
+                )
+                .await
+            }
+            None => None,
+        },
+    };
+
+    let Some(skin_url) = skin_url else {
+        return Ok(None);
+    };
+
+    let data_url = download_as_data_url(&client, &skin_url).await;
+    Ok(data_url)
+}
+
+/// 读取 Mojang 档案中的皮肤纹理地址
+async fn fetch_textures_skin(client: &reqwest::Client, profile_url: &str) -> Option<String> {
+    let response = client.get(profile_url).send().await.ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let profile: serde_json::Value = response.json().await.ok()?;
+    let properties = profile.get("properties")?.as_array()?;
+    let textures = properties
+        .iter()
+        .find(|property| property.get("name").and_then(|name| name.as_str()) == Some("textures"))?;
+    let value = textures.get("value")?.as_str()?;
+    let decoded = general_purpose::STANDARD.decode(value).ok()?;
+    let payload: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
+    let url = payload
+        .get("textures")?
+        .get("SKIN")?
+        .get("url")?
+        .as_str()?
+        .replace("http://", "https://");
+    Some(url)
+}
+
+/// 按用户名查询 Mojang 正版档案 UUID
+async fn lookup_mojang_uuid(client: &reqwest::Client, username: &str) -> Option<String> {
+    let encoded: String = url::form_urlencoded::byte_serialize(username.as_bytes()).collect();
+    let response = client
+        .get(format!(
+            "https://api.mojang.com/users/profiles/minecraft/{}",
+            encoded
+        ))
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let profile: serde_json::Value = response.json().await.ok()?;
+    Some(profile.get("id")?.as_str()?.to_string())
+}
+
+/// 下载皮肤纹理并转换成 data URL
+async fn download_as_data_url(client: &reqwest::Client, url: &str) -> Option<String> {
+    let response = client.get(url).send().await.ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let bytes = response.bytes().await.ok()?;
+    if bytes.len() < 64 {
+        return None;
+    }
+    let encoded = general_purpose::STANDARD.encode(&bytes);
+    Some(format!("data:image/png;base64,{}", encoded))
 }
 
 /// 读取本地皮肤文件并返回 base64 data URL

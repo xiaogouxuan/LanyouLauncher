@@ -32,8 +32,7 @@ function DataInitializer({ children }: { children: React.ReactNode }) {
       .getAccounts()
       .then((accounts) => {
         setAccounts(accounts);
-        const active = accounts.find((a) => a.is_active);
-        if (active) setActiveAccount(active);
+        setActiveAccount(accounts.find((a) => a.is_active) ?? null);
       })
       .catch(() => {});
 

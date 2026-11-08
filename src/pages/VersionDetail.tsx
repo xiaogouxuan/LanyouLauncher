@@ -249,7 +249,7 @@ export default function VersionDetail() {
   };
 
   return (
-    <PageTransition>
+    <PageTransition variant="slide">
       <div className="p-5 space-y-3.5 h-full flex flex-col overflow-y-auto">
         <Button variant="text" size="sm" onClick={() => navigate("/versions")} className="w-fit">
           <ChevronLeft size={16} />

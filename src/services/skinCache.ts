@@ -194,7 +194,22 @@ export async function loadSkinForAccount(
     }
   }
 
-  // 离线账号使用内置皮肤，保证一定有头像
+  // 优先读取账号的真实皮肤：
+  // 微软账号来自 Mojang 官方，外置登录来自皮肤站，离线账号按用户名匹配正版档案
+  try {
+    const dataUrl = await accountService.resolveAccountSkin(account.id);
+    if (dataUrl) {
+      const img = await loadImage(dataUrl, signal);
+      if (img.naturalWidth >= 64 && img.naturalHeight >= 32) {
+        cacheSkin(account.id, img);
+        return img;
+      }
+    }
+  } catch (err) {
+    console.warn("[skinCache] 获取账号真实皮肤失败:", err);
+  }
+
+  // 离线账号没有正版档案时使用内置皮肤，保证一定有头像
   if (isOffline) {
     try {
       const img = await loadImage(getDefaultSkinUrl(account), signal);
@@ -205,23 +220,25 @@ export async function loadSkinForAccount(
     }
   }
 
-  // 在线皮肤 API
-  const uuid = account.id.replace(/-/g, "");
-  const urls = [
-    `https://crafatar.com/skins/${uuid}`,
-    `https://mc-heads.net/skin/${uuid}`,
-    `https://visage.surgeplay.com/skin/${uuid}`,
-  ];
-  for (const url of urls) {
-    if (signal?.aborted) throw new DOMException("aborted", "AbortError");
-    try {
-      const img = await loadImage(url, signal);
-      if (img.naturalWidth >= 64 && img.naturalHeight >= 32) {
-        cacheSkin(account.id, img);
-        return img;
+  // 在线皮肤 API（UUID 直链，作为真实皮肤接口失败后的兜底）
+  if (!isOffline) {
+    const uuid = account.id.replace(/-/g, "");
+    const urls = [
+      `https://crafatar.com/skins/${uuid}`,
+      `https://mc-heads.net/skin/${uuid}`,
+      `https://visage.surgeplay.com/skin/${uuid}`,
+    ];
+    for (const url of urls) {
+      if (signal?.aborted) throw new DOMException("aborted", "AbortError");
+      try {
+        const img = await loadImage(url, signal);
+        if (img.naturalWidth >= 64 && img.naturalHeight >= 32) {
+          cacheSkin(account.id, img);
+          return img;
+        }
+      } catch {
+        continue;
       }
-    } catch {
-      continue;
     }
   }
 

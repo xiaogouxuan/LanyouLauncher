@@ -242,23 +242,90 @@ input:focus:not(:focus-visible) {
   outline: none;
 }
 
-/* 过渡动画：短而干脆，避免拖沓 */
-.page-enter {
-  opacity: 0;
+/*
+ * 页面切换：整体节奏放慢到 300ms 左右，缓入缓出，避免一闪而过。
+ * 普通页面原地轻微聚焦；详情页从右侧短距离滑入，模拟从列表打开一层内容。
+ * 两者都不做整页上滑/下拉这类网页式动效。
+ */
+.page-transition {
+  animation-duration: 300ms;
+  animation-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+  animation-fill-mode: backwards;
+  transform-origin: 50% 0;
 }
 
-.page-enter-active {
-  opacity: 1;
-  transition: opacity 0.15s ease-out;
+.page-transition-focus {
+  animation-name: page-focus-in;
 }
 
-.page-exit {
-  opacity: 1;
+.page-transition-slide {
+  animation-name: page-slide-in;
+  animation-duration: 340ms;
 }
 
-.page-exit-active {
-  opacity: 0;
-  transition: opacity 0.1s ease-in;
+@keyframes page-focus-in {
+  from {
+    opacity: 0.6;
+    transform: scale(0.988);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes page-slide-in {
+  from {
+    opacity: 0.55;
+    transform: translateX(22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 侧栏选中标记：切换页面时轻微拉伸淡入，而不是硬切 */
+.nav-marker {
+  animation: nav-marker-in 220ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  transform-origin: 50% 50%;
+}
+
+@keyframes nav-marker-in {
+  from {
+    opacity: 0.35;
+    transform: scaleY(0.55);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+/*
+ * 全屏皮肤预览：窗口本身保持不透明，只做从略大一圈收进窗口内的落位动画，
+ * 避免淡入时透出桌面造成“闪一下”的割裂感。
+ */
+.skin-preview-enter {
+  animation: skin-preview-in 380ms cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  transform-origin: 50% 50%;
+}
+
+@keyframes skin-preview-in {
+  from {
+    transform: scale(1.015);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-transition,
+  .nav-marker,
+  .skin-preview-enter {
+    animation: none;
+  }
 }
 
 .pixelated {

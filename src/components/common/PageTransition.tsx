@@ -1,24 +1,14 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode } from "react";
 
 interface PageTransitionProps {
   children: ReactNode;
+  /**
+   * focus：普通页面，原位轻微聚焦淡入
+   * slide：详情类页面，从右侧短距离滑入，像从列表里打开一层内容
+   */
+  variant?: "focus" | "slide";
 }
 
-export function PageTransition({ children }: PageTransitionProps) {
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const timer = requestAnimationFrame(() => setVisible(true));
-    return () => cancelAnimationFrame(timer);
-  }, []);
-
-  return (
-    <div
-      className={`transition-opacity duration-200 ease-out ${
-        visible ? "opacity-100" : "opacity-0"
-      }`}
-    >
-      {children}
-    </div>
-  );
+export function PageTransition({ children, variant = "focus" }: PageTransitionProps) {
+  return <div className={`page-transition page-transition-${variant}`}>{children}</div>;
 }

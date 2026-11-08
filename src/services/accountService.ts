@@ -46,4 +46,13 @@ export const accountService = {
   async readSkinDataUrl(path: string): Promise<string> {
     return invoke<string>("read_skin_data_url", { path });
   },
+
+  /**
+   * 获取账号的真实皮肤：
+   * 微软账号读取 Mojang 官方皮肤，外置登录读取皮肤站皮肤，
+   * 离线账号按用户名匹配正版档案。无可用皮肤时返回 null。
+   */
+  async resolveAccountSkin(id: string): Promise<string | null> {
+    return invoke<string | null>("resolve_account_skin", { id });
+  },
 };

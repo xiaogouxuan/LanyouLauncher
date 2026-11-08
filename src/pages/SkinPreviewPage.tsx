@@ -28,8 +28,7 @@ export default function SkinPreviewPage() {
     try {
       const list = await accountService.getAccounts();
       setAccounts(list);
-      const active = list.find((a) => a.is_active);
-      if (active) setActiveAccount(active);
+      setActiveAccount(list.find((a) => a.is_active) ?? null);
     } catch (error) {
       showToast("error", String(error));
     }
@@ -66,7 +65,7 @@ export default function SkinPreviewPage() {
 
   if (!account) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-surface">
+      <div className="skin-preview-enter fixed inset-0 z-50 flex flex-col items-center justify-center bg-surface rounded-window overflow-hidden ring-1 ring-inset ring-outline-variant">
         <p className="text-on-surface-variant">{t("common.noData")}</p>
         <Button className="mt-4" onClick={() => navigate("/accounts")}>
           <ArrowLeft size={16} />
@@ -86,7 +85,7 @@ export default function SkinPreviewPage() {
   const modelSize = Math.min(320, Math.max(190, window.innerWidth - 560));
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-surface">
+    <div className="skin-preview-enter fixed inset-0 z-50 flex flex-col bg-surface rounded-window overflow-hidden ring-1 ring-inset ring-outline-variant">
       {/* 顶部导航 */}
       <header className="flex items-center gap-4 px-5 h-14 border-b border-outline-variant shrink-0">
         <button
