@@ -47,7 +47,10 @@ function DataInitializer({ children }: { children: React.ReactNode }) {
         setLanguage(settings.language);
         setTheme(settings.theme);
       })
-      .catch(() => {});
+      .catch(() => {
+        // 读取失败也要标记为已加载，否则后续在设置页修改的内容永远不会写盘
+        setSettings(useSettingsStore.getState().settings);
+      });
 
     // 启动全局任务监听器
     taskService.startListening().catch(() => {});

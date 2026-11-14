@@ -81,7 +81,7 @@ export default function Settings() {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const { theme, setTheme, language, setLanguage } = useUIStore();
-  const { settings, updateSetting, setSettings } = useSettingsStore();
+  const { settings, updateSetting, hydrated } = useSettingsStore();
 
   const languageOptions = [
     { value: "zh-CN", label: t("settings.langZhCN") },
@@ -145,24 +145,19 @@ export default function Settings() {
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
 
   useEffect(() => {
-    settingsService
-      .getSettings()
-      .then((s) => {
-        setSettings(s);
-        setLanguage(s.language);
-        setTheme(s.theme);
-      })
-      .catch(() => {});
-
+    // 设置已由根节点统一从磁盘加载过，这里不再重复读取，
+    // 否则返回首页再进入本页时会用磁盘旧值覆盖刚才的修改（例如刚换的壁纸）。
     settingsService
       .getSystemInfo()
       .then((info) => setSystemInfo(info))
       .catch(() => {});
-  }, [setSettings, setLanguage, setTheme]);
+  }, []);
 
   useEffect(() => {
-    settingsService.saveSettings(settings).catch(() => {});
-  }, [settings]);
+    // 未完成首次加载前不写盘，避免把默认设置覆盖到用户配置上。
+    if (!hydrated) return;
+    settingsService.queueSave(settings);
+  }, [settings, hydrated]);
 
   const handleDetectJava = async () => {
     setDetectingJava(true);

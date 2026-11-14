@@ -9,6 +9,9 @@ export interface SystemInfo {
   recommended_memory_mb: number;
 }
 
+/** 设置写入队列，保证多次保存按发起顺序落盘 */
+let saveQueue: Promise<unknown> = Promise.resolve();
+
 export const settingsService = {
   async getSettings(): Promise<Settings> {
     return invoke<Settings>("get_settings");
@@ -16,6 +19,18 @@ export const settingsService = {
 
   async saveSettings(settings: Settings): Promise<void> {
     return invoke("save_settings", { settings });
+  },
+
+  /**
+   * 串行保存设置。
+   * 连续改设置时如果并发写入，后发起的请求可能先落盘，
+   * 导致旧值覆盖新值（例如换壁纸后又变回默认壁纸），这里用队列保证顺序。
+   */
+  queueSave(settings: Settings): Promise<void> {
+    saveQueue = saveQueue
+      .then(() => invoke("save_settings", { settings }))
+      .catch(() => {});
+    return saveQueue.then(() => undefined);
   },
 
   async detectJava(): Promise<[string, string][]> {
