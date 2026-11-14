@@ -11,8 +11,12 @@ use tauri::Emitter;
 
 const CURSEFORGE_API: &str = "https://api.curseforge.com/v1";
 
+/// 随启动器内置的 CurseForge API Key，用户没有填写自己的密钥时使用
+const BUILTIN_CURSEFORGE_API_KEY: &str =
+    "$2a$10$CWNYi16/GuOIOJCATbYDb.jr1DHObzeJ1P5NZx3nPkhJLbcZLe/nG";
+
 /// 读取 CurseForge API Key。
-/// 优先级：settings.curseforge_api_key > 环境变量 CURSEFORGE_API_KEY > 错误。
+/// 优先级：settings.curseforge_api_key > 环境变量 CURSEFORGE_API_KEY > 内置密钥。
 pub fn get_curseforge_api_key(state: &AppState) -> Result<String, I18nError> {
     let settings_file = crate::utils::paths::get_settings_file(&state.launcher_dir);
     let from_settings = std::fs::read_to_string(&settings_file)
@@ -29,6 +33,10 @@ pub fn get_curseforge_api_key(state: &AppState) -> Result<String, I18nError> {
         if !key.trim().is_empty() {
             return Ok(key);
         }
+    }
+
+    if !BUILTIN_CURSEFORGE_API_KEY.is_empty() {
+        return Ok(BUILTIN_CURSEFORGE_API_KEY.to_string());
     }
 
     Err(i18n_err!("errors.mod.curseforgeApiKeyMissing"))
@@ -61,7 +69,7 @@ struct CurseForgeLinks {
     website_url: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct CurseForgeFile {
     id: u64,
     #[serde(rename = "fileName")]
@@ -115,17 +123,26 @@ pub async fn search_curseforge(
         .await
         .map_err(|e| i18n_err!("errors.mod.parseCurseforgeResponseFailed", e))?;
 
-    let mut results = Vec::new();
-    for m in body.data {
-        let matched = find_best_curseforge_file(
-            state,
-            m.id,
-            version,
-            loader_type_id,
-        )
-        .await;
+    // 搜索结果已带 latestFiles：先本地匹配，命中就直接使用，避免每个 Mod 都额外请求一次文件列表
+    let tasks = body.data.into_iter().map(|m| async move {
+        let local = m
+            .latest_files
+            .iter()
+            .find(|f| curseforge_file_matches(f, version, loader))
+            .cloned();
+        let file = match local {
+            Some(file) => Some(file),
+            None => find_best_curseforge_file(state, m.id, version, loader_type_id)
+                .await
+                .ok()
+                .flatten(),
+        };
+        (m, file)
+    });
 
-        if let Ok(Some(file)) = matched {
+    let mut results = Vec::new();
+    for (m, file) in futures_util::future::join_all(tasks).await {
+        if let Some(file) = file {
             results.push(ModInfo {
                 id: m.id.to_string(),
                 project_id: Some(m.id.to_string()),
@@ -134,11 +151,7 @@ pub async fn search_curseforge(
                 version_id: file.id.to_string(),
                 file_name: Some(file.file_name.clone()),
                 loader: loader_type.clone(),
-                game_version: file
-                    .game_versions
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| version.unwrap_or("").to_string()),
+                game_version: pick_game_version(&file, version),
                 description: m.summary,
                 icon_url: m.logo.map(|l| l.url),
                 source: ModSource::CurseForge,
@@ -152,6 +165,35 @@ pub async fn search_curseforge(
     }
 
     Ok(results)
+}
+
+/// 判断搜索返回的文件是否匹配当前游戏版本与加载器
+fn curseforge_file_matches(
+    file: &CurseForgeFile,
+    version: Option<&str>,
+    loader: Option<&str>,
+) -> bool {
+    let version_ok = version
+        .map(|v| file.game_versions.iter().any(|g| g == v))
+        .unwrap_or(true);
+    let loader_ok = loader
+        .map(|l| file.game_versions.iter().any(|g| g.eq_ignore_ascii_case(l)))
+        .unwrap_or(true);
+    version_ok && loader_ok
+}
+
+/// 从 gameVersions 里取真正的游戏版本号（跳过 Client/Server 这类标记）
+fn pick_game_version(file: &CurseForgeFile, fallback: Option<&str>) -> String {
+    file.game_versions
+        .iter()
+        .find(|v| {
+            v.chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+        })
+        .cloned()
+        .unwrap_or_else(|| fallback.unwrap_or("").to_string())
 }
 
 fn parse_loader_type(loader: Option<&str>) -> LoaderType {

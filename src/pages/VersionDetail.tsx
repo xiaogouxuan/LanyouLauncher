@@ -63,13 +63,15 @@ export default function VersionDetail() {
   const [exportOptions, setExportOptions] = useState<ExportOption[]>([
     { key: "manifest", label: t("version.exportManifest"), checked: true },
     { key: "versionJson", label: t("version.exportVersionJson"), checked: true },
-    { key: "assets", label: t("version.exportAssets"), checked: true },
-    { key: "libraries", label: t("version.exportLibraries"), checked: true },
+    // 资源与依赖库在导入时会自动下载，默认不打包，避免整合包体积过大
+    { key: "assets", label: t("version.exportAssets"), checked: false },
+    { key: "libraries", label: t("version.exportLibraries"), checked: false },
     { key: "mods", label: t("version.exportMods"), checked: true },
     { key: "saves", label: t("version.exportSaves"), checked: false },
     { key: "options", label: t("version.exportOptions"), checked: false },
     { key: "resourcepacks", label: t("version.exportResourcepacks"), checked: false },
     { key: "shaderpacks", label: t("version.exportShaderpacks"), checked: false },
+    { key: "config", label: t("version.exportConfig"), checked: false },
   ]);
 
   const selectedExportOptions = useMemo(() => exportOptions.filter((option) => option.checked), [exportOptions]);

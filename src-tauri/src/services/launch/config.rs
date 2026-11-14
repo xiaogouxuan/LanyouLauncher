@@ -43,6 +43,7 @@ struct AssetIndexRef {
 #[derive(Debug, Deserialize)]
 struct VersionLibrary {
     name: String,
+    url: Option<String>,
     downloads: Option<LibraryDownloads>,
     natives: Option<HashMap<String, String>>,
     extract: Option<ExtractRules>,
@@ -83,19 +84,16 @@ pub fn build_launch_args(
     minecraft_dir: &Path,
     account: &Account,
 ) -> Result<Vec<String>, I18nError> {
-    // 1. 读取 version.json
+    // 1. 读取 version.json（兼容 HMCL/PCL 与加载器生成的 inheritsFrom 增量版本）
     let versions_dir = crate::utils::paths::get_versions_dir(minecraft_dir);
-    let version_json_path = versions_dir
-        .join(&config.version_id)
-        .join(format!("{}.json", config.version_id));
-
-    let content = std::fs::read_to_string(&version_json_path)
-        .map_err(|e| {
-            I18nError::new("errors.launch.readVersionFileFailed")
-                .param("path", version_json_path.display().to_string())
-                .param("detail", e.to_string())
-        })?;
-    let version: VersionJson = serde_json::from_str(&content)
+    let merged_json =
+        crate::services::version::resolve::load_merged_version_json(minecraft_dir, &config.version_id)
+            .map_err(|e| {
+                I18nError::new("errors.launch.readVersionFileFailed")
+                    .param("path", versions_dir.join(&config.version_id).display().to_string())
+                    .param("detail", e.to_string())
+            })?;
+    let version: VersionJson = serde_json::from_value(merged_json)
         .map_err(|e| i18n_err!("errors.launch.parseVersionFileFailed", e))?;
 
     // 2. 确定游戏目录并准备 natives 目录
@@ -553,14 +551,16 @@ fn build_classpath_string(
 /// 从 Maven 坐标推导 library 路径
 fn derive_library_path(name: &str) -> String {
     // com.mojang:logging:1.1.1 → com/mojang/logging/1.1.1/logging-1.1.1.jar
+    // group:artifact:version:classifier → .../artifact-version-classifier.jar
     let parts: Vec<&str> = name.split(':').collect();
     if parts.len() >= 3 {
         let (group, artifact, version) = (parts[0], parts[1], parts[2]);
         let group_path = group.replace('.', "/");
-        format!(
-            "{}/{}/{}/{}-{}.jar",
-            group_path, artifact, version, artifact, version
-        )
+        let file = match parts.get(3) {
+            Some(classifier) => format!("{}-{}-{}.jar", artifact, version, classifier),
+            None => format!("{}-{}.jar", artifact, version),
+        };
+        format!("{}/{}/{}/{}", group_path, artifact, version, file)
     } else {
         format!("{}.jar", name.replace(':', "/"))
     }

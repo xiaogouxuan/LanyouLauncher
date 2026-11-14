@@ -78,6 +78,8 @@ pub fn run() {
             commands::version::clear_version_java,
             commands::version::export_version_pack,
             commands::version::open_version_dir,
+            // 整合包
+            commands::modpack::import_modpack,
             // 启动
             commands::launch::start_game,
             commands::launch::stop_game,
@@ -89,6 +91,7 @@ pub fn run() {
             commands::mod_manager::download_mod,
             commands::mod_manager::download_mod_to_local,
             commands::mod_manager::get_installed_mods,
+            commands::mod_manager::identify_installed_mods,
             commands::mod_manager::toggle_mod,
             commands::mod_manager::delete_mod,
             commands::mod_manager::open_mods_dir,
@@ -115,6 +118,8 @@ pub fn run() {
             commands::easytier::stop_easytier,
             commands::easytier::clear_easytier_logs,
             commands::easytier::ping_easytier_server,
+            commands::easytier::get_easytier_diagnostics,
+            commands::easytier::discover_lan_worlds,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

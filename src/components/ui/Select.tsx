@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Check } from "lucide-react";
 
 interface SelectOption {
@@ -30,15 +31,44 @@ export function Select({
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  /** 下拉面板用 fixed + portal 渲染，位置跟随触发按钮 */
+  const [panelRect, setPanelRect] = useState<{ left: number; top: number; width: number } | null>(null);
 
   const selectedOption = options.find((opt) => opt.value === value);
   const selectableOptions = options.filter((opt) => !opt.disabled);
 
+  // 打开时量一次按钮位置；滚动或缩放时跟随，避免下拉被列表卡片盖住
+  useLayoutEffect(() => {
+    if (!open) {
+      setPanelRect(null);
+      return;
+    }
+    const update = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPanelRect({ left: rect.left, top: rect.bottom + 4, width: rect.width });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open]);
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
+      const target = e.target as Node;
+      // 下拉面板通过 portal 挂到 body，需要单独判断，否则点选项会被当成“点外面”
+      if (
+        containerRef.current?.contains(target) ||
+        listRef.current?.contains(target)
+      ) {
+        return;
       }
+      setOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -126,6 +156,7 @@ export function Select({
       aria-disabled={disabled}
     >
       <button
+        ref={buttonRef}
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setOpen(!open)}
@@ -151,40 +182,50 @@ export function Select({
         />
       </button>
 
-      {open && (
-        <div
-          ref={listRef}
-          role="listbox"
-          className="absolute z-50 w-full mt-1 max-h-60 overflow-auto rounded-btn
-            bg-surface-highest border border-outline-variant shadow-elevated py-1 animate-fade-in"
-        >
-          {options.map((opt) => {
-            const isSelected = opt.value === value;
-            const isHighlighted = selectableOptions[highlightedIndex]?.value === opt.value;
-            const selectableIndex = selectableOptions.findIndex((o) => o.value === opt.value);
+      {open && panelRect &&
+        createPortal(
+          <div
+            ref={listRef}
+            role="listbox"
+            style={{
+              position: "fixed",
+              left: panelRect.left,
+              top: panelRect.top,
+              width: panelRect.width,
+              // 高于弹窗层（弹窗 z-index 约 50~60），保证下拉永远在最上层
+              zIndex: 9999,
+            }}
+            className="max-h-60 overflow-auto rounded-btn
+              bg-surface-highest border border-outline-variant shadow-elevated py-1 animate-fade-in"
+          >
+            {options.map((opt) => {
+              const isSelected = opt.value === value;
+              const isHighlighted = selectableOptions[highlightedIndex]?.value === opt.value;
+              const selectableIndex = selectableOptions.findIndex((o) => o.value === opt.value);
 
-            return (
-              <div
-                key={opt.value}
-                role="option"
-                aria-selected={isSelected}
-                title={opt.description}
-                onClick={() => handleSelect(opt)}
-                onMouseEnter={() =>
-                  !opt.disabled && setHighlightedIndex(selectableIndex)
-                }
-                className={`flex items-center justify-between gap-2 h-8 px-3 text-[13px] cursor-pointer
-                  ${opt.disabled ? "text-on-surface-subtle cursor-not-allowed" : "text-on-surface"}
-                  ${isHighlighted && !opt.disabled ? "bg-surface-hover" : ""}
-                  ${isSelected ? "bg-primary/8 text-primary font-medium" : ""}`}
-              >
-                <span className="truncate">{opt.label}</span>
-                {isSelected && <Check size={14} />}
-              </div>
-            );
-          })}
-        </div>
-      )}
+              return (
+                <div
+                  key={opt.value}
+                  role="option"
+                  aria-selected={isSelected}
+                  title={opt.description}
+                  onClick={() => handleSelect(opt)}
+                  onMouseEnter={() =>
+                    !opt.disabled && setHighlightedIndex(selectableIndex)
+                  }
+                  className={`flex items-center justify-between gap-2 h-8 px-3 text-[13px] cursor-pointer
+                    ${opt.disabled ? "text-on-surface-subtle cursor-not-allowed" : "text-on-surface"}
+                    ${isHighlighted && !opt.disabled ? "bg-surface-hover" : ""}
+                    ${isSelected ? "bg-primary/8 text-primary font-medium" : ""}`}
+                >
+                  <span className="truncate">{opt.label}</span>
+                  {isSelected && <Check size={14} />}
+                </div>
+              );
+            })}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

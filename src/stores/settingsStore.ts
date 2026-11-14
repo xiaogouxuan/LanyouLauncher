@@ -13,7 +13,6 @@ const defaultSettings: Settings = {
   language: "zh-CN",
   theme: "system",
   download_source: "official",
-  curseforge_api_key: "",
   java_paths: [],
   default_memory: 4096,
   default_game_dir: "",
@@ -22,7 +21,9 @@ const defaultSettings: Settings = {
   background_image: "",
   background_opacity: 1,
   background_blur: 0,
-  theme_color: "#1370f3",
+  theme_color: "#2F6BFF",
+  theme_color_auto: true,
+  ui_material: "solid",
   close_after_launch: false,
 };
 

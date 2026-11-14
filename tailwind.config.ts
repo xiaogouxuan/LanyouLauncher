@@ -21,7 +21,6 @@ export default {
         },
         // 兼容旧版容器命名，保证历史页面同步使用新配色
         "surface-container": rgb("--bg-panel-rgb"),
-        shell: "var(--shell-surface)",
         "surface-container-lowest": rgb("--bg-inset-rgb"),
         "surface-container-low": rgb("--bg-inset-rgb"),
         "surface-container-high": rgb("--bg-card-rgb"),
@@ -140,10 +139,10 @@ export default {
         aurora: "none",
       },
       borderRadius: {
-        card: "10px",
-        btn: "8px",
-        input: "8px",
-        window: "8px",
+        card: "var(--radius-card)",
+        btn: "var(--radius-btn)",
+        input: "var(--radius-input)",
+        window: "var(--radius-window)",
         "md-none": "0px",
         "md-xs": "4px",
         "md-sm": "6px",
@@ -199,7 +198,7 @@ export default {
         "fade-in": "fadeIn 0.15s ease-out forwards",
         "slide-up": "slideUp 0.18s ease-out forwards",
         "slide-up-small": "slideUpSmall 0.16s ease-out forwards",
-        "scale-in": "scaleIn 0.16s ease-out forwards",
+        "scale-in": "dialogIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards",
         "pulse-soft": "pulseSoft 2.4s ease-in-out infinite",
       },
       keyframes: {
@@ -217,6 +216,10 @@ export default {
         },
         scaleIn: {
           "0%": { opacity: "0", transform: "scale(0.985)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
+        dialogIn: {
+          "0%": { opacity: "0", transform: "scale(0.972)" },
           "100%": { opacity: "1", transform: "scale(1)" },
         },
         pulseSoft: {

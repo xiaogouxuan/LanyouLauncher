@@ -75,11 +75,6 @@ fn detect_loader_from_json(json: &serde_json::Value) -> Option<LoaderType> {
     None
 }
 
-/// 判断一个版本目录是否为 Mod 加载器生成的派生版本（如 fabric-loader-0.19.2-1.14.4）
-fn is_loader_derived_version(json: &serde_json::Value) -> bool {
-    json.get("inheritsFrom").and_then(|v| v.as_str()).is_some() && detect_loader_from_json(json).is_some()
-}
-
 /// 判断发布日期是否在愚人节（参考 PCL-CE，将 UTC 时间加 2 小时后判断）
 fn is_april_fools_by_date(release_time: &str) -> bool {
     chrono::DateTime::parse_from_rfc3339(release_time)
@@ -263,12 +258,9 @@ pub async fn get_installed_versions(
                         .ok()
                         .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok());
 
-                    // 过滤掉 Mod 加载器生成的派生版本目录，避免列表里出现 fabric-loader-xxx 等条目
-                    if let Some(ref json) = parsed_json {
-                        if is_loader_derived_version(json) {
-                            continue;
-                        }
-                    }
+                    // 加载器派生版本不再隐藏：HMCL/PCL 的整合包实例本身就是带
+                    // inheritsFrom 的加载器版本，隐藏后用户就无法直接启动它们。
+                    // 启动时会自动合并父版本，原版与加载器版本都能正常使用。
 
                     let (version_type, release_time, lore, loader) = parsed_json
                         .map(|json| {
@@ -295,18 +287,17 @@ pub async fn get_installed_versions(
                     let meta = crate::services::version::meta::read_version_meta(&state.minecraft_dir, &dir_name);
                     let loader_history = meta.loader_history.clone();
 
-                    let game_dir = if meta.is_isolated {
-                        if meta.game_dir.is_empty() {
-                            Some(
-                                crate::utils::paths::get_version_isolation_dir(&state.minecraft_dir, &dir_name)
-                                    .to_string_lossy()
-                                    .to_string(),
-                            )
-                        } else {
-                            Some(meta.game_dir)
-                        }
-                    } else {
+                    // 游戏目录：隔离版本使用实例目录（兼容 HMCL/PCL 布局），
+                    // 共享目录的版本返回 None，由启动参数使用默认 .minecraft
+                    let resolved_dir = crate::services::version::meta::resolve_version_game_dir(
+                        &state.minecraft_dir,
+                        &dir_name,
+                        &meta,
+                    );
+                    let game_dir = if resolved_dir == state.minecraft_dir {
                         None
+                    } else {
+                        Some(resolved_dir.to_string_lossy().to_string())
                     };
 
                     let java_path = if meta.java_path.is_empty() {
@@ -427,8 +418,28 @@ pub async fn open_version_dir(
     open::that(&version_dir).map_err(|e| i18n_err!("errors.system.openPathFailed", e))
 }
 
-fn parse_loader_type(loader: &str) -> Result<LoaderType, I18nError> {
+/// 从版本目录名推断加载器版本号
+/// 例：fabric-loader-0.15.11-1.20.1 / 1.20.1-forge-47.2.0
+fn loader_version_from_id(version_id: &str, loader: &LoaderType) -> Option<String> {
     match loader {
+        LoaderType::Fabric => version_id
+            .strip_prefix("fabric-loader-")
+            .and_then(|rest| rest.split_once('-'))
+            .map(|(version, _)| version.to_string()),
+        LoaderType::Quilt => version_id
+            .strip_prefix("quilt-loader-")
+            .and_then(|rest| rest.split_once('-'))
+            .map(|(version, _)| version.to_string()),
+        LoaderType::Forge => version_id
+            .split_once("-forge-")
+            .map(|(_, version)| version.to_string()),
+        LoaderType::NeoForge => version_id
+            .split_once("-neoforge-")
+            .map(|(_, version)| version.to_string()),
+    }
+}
+
+fn parse_loader_type(loader: &str) -> Result<LoaderType, I18nError> {    match loader {
         "Forge" => Ok(LoaderType::Forge),
         "Fabric" => Ok(LoaderType::Fabric),
         "NeoForge" => Ok(LoaderType::NeoForge),
@@ -623,6 +634,7 @@ fn version_export_key(key: &str) -> Option<&'static str> {
         "options" => Some("options.txt"),
         "resourcepacks" => Some("resourcepacks"),
         "shaderpacks" => Some("shaderpacks"),
+        "config" => Some("config"),
         _ => None,
     }
 }
@@ -706,22 +718,38 @@ pub async fn export_version_pack(
     let meta = read_version_meta(&state.minecraft_dir, &version_id);
     let game_dir = resolve_version_game_dir(&state.minecraft_dir, &version_id, &meta);
 
+    // 解析继承链，得到真正的原版版本号与加载器版本，
+    // 这样导出的整合包在其它机器上导入时能自动补齐正确的基础版本
+    let chain = crate::services::version::resolve::load_version_chain(&state.minecraft_dir, &version_id)
+        .unwrap_or_else(|_| vec![version_id.clone()]);
+    let base_version = chain.last().cloned().unwrap_or_else(|| version_id.clone());
+
+    let loader = fs::read_to_string(version_dir.join(format!("{}.json", version_id)))
+        .ok()
+        .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+        .and_then(|value| detect_loader_from_json(&value));
+
     let mut manifest = serde_json::json!({
-        "format": 1,
+        "format": 2,
         "launcher": "LanyouLauncher",
+        "name": version_id,
         "versionId": version_id,
+        "baseVersion": base_version,
+        "gameVersion": base_version,
         "contents": selected_keys,
         "isolated": meta.is_isolated,
         "gameDir": meta.game_dir,
     });
 
-    if let Ok(version_json) = fs::read_to_string(version_dir.join(format!("{}.json", version_id))) {
-        if let Ok(version_value) = serde_json::from_str::<serde_json::Value>(&version_json) {
-            manifest["gameVersion"] = version_value.get("id").cloned().unwrap_or(serde_json::Value::Null);
-            manifest["mainClass"] = version_value.get("mainClass").cloned().unwrap_or(serde_json::Value::Null);
-            if let Some(loader) = detect_loader_from_json(&version_value) {
-                manifest["loader"] = serde_json::Value::String(format!("{:?}", loader));
-            }
+    if let Some(loader) = &loader {
+        manifest["loader"] = serde_json::Value::String(format!("{:?}", loader));
+        if let Some(loader_version) = meta
+            .loader_history
+            .get(loader)
+            .cloned()
+            .or_else(|| loader_version_from_id(&version_id, loader))
+        {
+            manifest["loaderVersion"] = serde_json::Value::String(loader_version);
         }
     }
 
@@ -763,6 +791,7 @@ pub async fn export_version_pack(
                 "options" => Some(game_dir.join("options.txt")),
                 "resourcepacks" => Some(game_dir.join("resourcepacks")),
                 "shaderpacks" => Some(game_dir.join("shaderpacks")),
+                "config" => Some(game_dir.join("config")),
                 _ => None,
             };
             if let Some(source) = source {

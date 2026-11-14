@@ -12,6 +12,10 @@ interface TitlebarProps {
   onOpenSearch: () => void;
 }
 
+/**
+ * 顶部栏：不设底板与描边，直接悬浮在壁纸上，
+ * 只保留应用标识与右侧的操作按钮，颜色随壁纸亮度自动反色。
+ */
 export function Titlebar({ onOpenTasks, onOpenSearch }: TitlebarProps) {
   const { t } = useTranslation();
   const [isMaximized, setIsMaximized] = useState(false);
@@ -72,62 +76,47 @@ export function Titlebar({ onOpenTasks, onOpenSearch }: TitlebarProps) {
 
   return (
     <div
-      className="h-10 flex items-center justify-between bg-shell border-b border-primary/45 select-none shrink-0 relative"
+      className="h-11 flex items-center justify-between select-none shrink-0 relative"
       onDoubleClick={handleMaximize}
     >
-      {/* 左侧：品牌与拖拽区域 */}
-      <div data-tauri-drag-region className="flex items-center gap-2.5 pl-3 h-full flex-1 min-w-0">
-        <div className="w-6 h-6 rounded-[4px] border border-outline-variant bg-surface-high p-[1px]">
-          <img
-            src={logoUrl}
-            alt="logo"
-            className="w-full h-full rounded-[3px] object-contain"
-          />
-        </div>
-        <span className="text-[13px] font-semibold tracking-tight truncate text-on-surface">
+      {/* 左侧：应用标识与拖拽区域 */}
+      <div data-tauri-drag-region className="flex items-center gap-2 pl-4 h-full flex-1 min-w-0">
+        <img src={logoUrl} alt="" className="w-[22px] h-[22px] object-contain" />
+        <span className="wallpaper-text text-[13px] font-semibold tracking-tight truncate">
           {APP_NAME}
         </span>
       </div>
 
-      {/* 中间：搜索入口 */}
-      <button
-        type="button"
-        onClick={onOpenSearch}
-        className="no-drag hidden md:flex items-center gap-2 h-7 w-[300px] px-2.5 rounded-[4px]
-          bg-surface-high border border-outline-variant text-on-surface-subtle
-          hover:border-primary/40 hover:text-on-surface-variant transition-colors duration-150"
-        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-      >
-        <Search size={13} className="text-on-surface-subtle" />
-        <span className="text-[12px] flex-1 text-left truncate">{t("more.paletteHint")}</span>
-        <kbd className="text-[10px] px-1.5 py-0.5 rounded-[3px] border border-outline-variant bg-surface-container text-on-surface-subtle">
-          {t("more.shortcutHint")}
-        </kbd>
-      </button>
-
-      {/* 右侧：任务与窗口控制 */}
+      {/* 右侧：搜索、任务与窗口控制 */}
       <div
-        className="flex h-full flex-1 justify-end"
+        className="flex h-full items-center gap-0.5 pr-1"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
+        <button
+          type="button"
+          onClick={onOpenSearch}
+          title={String(t("more.paletteHint"))}
+          className="chrome-btn"
+        >
+          <Search size={15} />
+        </button>
         <button
           type="button"
           onClick={onOpenTasks}
           title={String(t("titlebar.tasks"))}
-          className="relative w-10 h-full flex items-center justify-center text-on-surface-variant
-            hover:bg-surface-hover hover:text-on-surface transition-colors"
+          className="chrome-btn relative"
         >
-          <ListTodo size={16} />
+          <ListTodo size={15} />
           {activeTaskCount > 0 && (
-            <span className="absolute top-[9px] right-[11px] w-[6px] h-[6px] rounded-[2px] bg-primary" />
+            <span className="absolute top-[5px] right-[5px] w-[5px] h-[5px] rounded-full bg-primary" />
           )}
         </button>
+
         <button
           type="button"
           onClick={handleMinimize}
           title={String(t("titlebar.minimize"))}
-          className="w-10 h-full flex items-center justify-center text-on-surface-variant
-            hover:bg-surface-hover hover:text-on-surface transition-colors"
+          className="chrome-win"
         >
           <Minus size={14} />
         </button>
@@ -135,8 +124,7 @@ export function Titlebar({ onOpenTasks, onOpenSearch }: TitlebarProps) {
           type="button"
           onClick={handleMaximize}
           title={isMaximized ? String(t("titlebar.restore")) : String(t("titlebar.maximize"))}
-          className="w-10 h-full flex items-center justify-center text-on-surface-variant
-            hover:bg-surface-hover hover:text-on-surface transition-colors"
+          className="chrome-win"
         >
           {isMaximized ? <Copy size={12} /> : <Square size={12} />}
         </button>
@@ -146,8 +134,7 @@ export function Titlebar({ onOpenTasks, onOpenSearch }: TitlebarProps) {
           onMouseDown={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
           title={String(t("titlebar.close"))}
-          className="w-10 h-full flex items-center justify-center text-on-surface-variant
-            hover:bg-danger hover:text-white transition-colors"
+          className="chrome-win chrome-win-close"
         >
           <X size={15} />
         </button>

@@ -35,6 +35,23 @@ const GAME_VERSIONS = [
 
 const LOADERS: LoaderType[] = ["Fabric", "Forge", "NeoForge", "Quilt"];
 
+/** Mod 图标：加载失败时退回拼图占位，避免出现破图 */
+function ModThumb({ url }: { url?: string | null }) {
+  const [failed, setFailed] = useState(false);
+  if (url && !failed) {
+    return (
+      <img
+        src={url}
+        alt=""
+        loading="lazy"
+        className="w-full h-full object-cover"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return <Puzzle size={20} className="text-primary" />;
+}
+
 export default function Mods() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -55,6 +72,7 @@ export default function Mods() {
   const [loaderFilter, setLoaderFilter] = useState<LoaderType | "all">("all");
   const [searchResults, setSearchResults] = useState<ModInfo[]>([]);
   const [searching, setSearching] = useState(false);
+  const [modSource, setModSource] = useState<"Modrinth" | "CurseForge">("Modrinth");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   // 已安装 Mod 更新检查
@@ -124,6 +142,13 @@ export default function Mods() {
     try {
       const mods = await modService.getInstalledMods(targetVersion);
       setInstalledMods(mods);
+      // 手动放进 mods 目录的 Mod 没有索引信息，后台用文件哈希补全图标、简介和项目 ID
+      if (mods.some((mod) => !mod.icon_url && !mod.project_id)) {
+        modService
+          .identifyInstalledMods(targetVersion)
+          .then((enriched) => setInstalledMods(enriched))
+          .catch(() => {});
+      }
     } catch (error) {
       showToast("error", formatError(error));
     } finally {
@@ -144,14 +169,18 @@ export default function Mods() {
       const version = versionFilter === "all" ? undefined : versionFilter;
       const loader = loaderFilter === "all" ? undefined : loaderFilter;
 
-      const modrinth = await modService.searchModrinth("", version, loader);
-      setSearchResults(modrinth);
+      const list =
+        modSource === "CurseForge"
+          ? await modService.searchCurseForge("", version, loader)
+          : await modService.searchModrinth("", version, loader);
+      setSearchResults(list);
     } catch (error) {
+      setSearchResults([]);
       showToast("error", formatError(error));
     } finally {
       setSearching(false);
     }
-  }, [versionFilter, loaderFilter, showToast]);
+  }, [versionFilter, loaderFilter, modSource, showToast]);
 
   // 进入探索页且搜索框为空时自动加载推荐
   useEffect(() => {
@@ -174,7 +203,10 @@ export default function Mods() {
       const version = versionFilter === "all" ? undefined : versionFilter;
       const loader = loaderFilter === "all" ? undefined : loaderFilter;
 
-      const results = await modService.searchModrinth(searchQuery, version, loader);
+      const results =
+        modSource === "CurseForge"
+          ? await modService.searchCurseForge(searchQuery, version, loader)
+          : await modService.searchModrinth(searchQuery, version, loader);
       setSearchResults(results);
     } catch (error) {
       showToast("error", formatError(error));
@@ -182,6 +214,14 @@ export default function Mods() {
       setSearching(false);
     }
   };
+
+  // 切换搜索源后，已有关键词时按同一关键词重新搜索；无关键词则由推荐列表自动重载
+  useEffect(() => {
+    if (activeTab === "explore" && searchQuery.trim()) {
+      handleSearch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modSource]);
 
   // 打开版本选择器
   const handleSelectVersion = (mod: ModInfo) => {
@@ -377,25 +417,28 @@ export default function Mods() {
 
         {activeTab === "installed" ? (
           <div className="space-y-3 flex-1 flex flex-col overflow-hidden">
-            <div className="flex justify-end gap-2">
-              <Button variant="text" size="sm" onClick={handleOpenModsDir} disabled={!targetVersion}>
-                <FolderOpen size={14} />
-                {t("mod.openDir")}
-              </Button>
-              <Button
-                variant="tonal"
-                size="sm"
-                onClick={handleCheckUpdates}
-                disabled={checkingUpdates || !targetVersion || installedMods.length === 0}
-              >
-                <RefreshCw size={14} className={checkingUpdates ? "animate-spin" : undefined} />
-                {t("mod.checkUpdates")}
-              </Button>
-              <Button variant="text" size="sm" onClick={loadInstalled} disabled={loadingInstalled || !targetVersion}>
-                <RefreshCw size={14} className={loadingInstalled ? "animate-spin" : undefined} />
-                {t("common.retry")}
-              </Button>
-            </div>
+            {/* 没选版本时这些操作都没意义，直接不渲染，避免留下一排点不动的白按钮 */}
+            {targetVersion && (
+              <div className="flex items-center justify-end gap-2">
+                <Button variant="text" size="sm" onClick={handleOpenModsDir}>
+                  <FolderOpen size={14} />
+                  {t("mod.openDir")}
+                </Button>
+                <Button
+                  variant="text"
+                  size="sm"
+                  onClick={handleCheckUpdates}
+                  disabled={checkingUpdates || installedMods.length === 0}
+                >
+                  <RefreshCw size={14} className={checkingUpdates ? "animate-spin" : undefined} />
+                  {t("mod.checkUpdates")}
+                </Button>
+                <Button variant="text" size="sm" onClick={loadInstalled} disabled={loadingInstalled}>
+                  <RefreshCw size={14} className={loadingInstalled ? "animate-spin" : undefined} />
+                  {t("common.retry")}
+                </Button>
+              </div>
+            )}
 
             {!targetVersion ? (
               <EmptyState
@@ -425,11 +468,18 @@ export default function Mods() {
                   <Card
                     key={mod.id}
                     hover
-                    onClick={() => navigate(`/mods/${mod.project_id ?? mod.id}`, { state: { mod } })}
+                    onClick={() =>
+                      navigate(
+                        mod.project_id
+                          ? `/mods/${mod.project_id}?source=${mod.source}`
+                          : `/mods/${mod.id}`,
+                        { state: { mod } },
+                      )
+                    }
                     className="flex items-center gap-3 p-3 animate-fade-in"
                   >
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <Puzzle size={20} className="text-primary" />
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      <ModThumb url={mod.icon_url} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -440,8 +490,15 @@ export default function Mods() {
                         <Badge>{mod.source}</Badge>
                         <InstanceBadge instanceId={mod.instance_id} isIsolated={mod.is_isolated} />
                       </div>
+                      {mod.description && (
+                        <p className="text-xs text-on-surface-variant/80 truncate">
+                          {mod.description}
+                        </p>
+                      )}
                       <p className="text-xs text-on-surface-variant truncate">
-                        {mod.version || mod.game_version || ""}
+                        {[mod.version, mod.game_version && `MC ${mod.game_version}`]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </p>
                       {mod.install_path && (
                         <p className="text-xs text-on-surface-variant/70 truncate mt-0.5">
@@ -469,7 +526,7 @@ export default function Mods() {
                         </Button>
                       )}
                       <Button
-                        variant="text"
+                        variant="quiet"
                         size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -480,7 +537,7 @@ export default function Mods() {
                         {mod.enabled ? <PowerOff size={16} /> : <Power size={16} />}
                       </Button>
                       <Button
-                        variant="text"
+                        variant="quiet"
                         size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -498,6 +555,26 @@ export default function Mods() {
           </div>
         ) : (
           <div className="space-y-4 flex-1 flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[12px] font-medium text-on-surface-variant">
+                {t("mod.searchSource")}
+              </span>
+              <div className="segmented">
+                <button
+                  className={`segmented-item ${modSource === "Modrinth" ? "segmented-item-active" : "segmented-item-idle"}`}
+                  onClick={() => setModSource("Modrinth")}
+                >
+                  Modrinth
+                </button>
+                <button
+                  className={`segmented-item ${modSource === "CurseForge" ? "segmented-item-active" : "segmented-item-idle"}`}
+                  onClick={() => setModSource("CurseForge")}
+                >
+                  CurseForge
+                </button>
+              </div>
+            </div>
+
             <div className="flex gap-3">
               <Input
                 placeholder={t("mod.searchPlaceholder")}

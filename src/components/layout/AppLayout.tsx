@@ -1,7 +1,7 @@
 import { Outlet } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { Titlebar } from "./Titlebar";
-import { Sidebar } from "./Sidebar";
+import { BottomNav } from "./BottomNav";
 import { ContentArea } from "./ContentArea";
 import { CommandPalette } from "./CommandPalette";
 import { TaskPanel } from "@/components/task/TaskPanel";
@@ -26,13 +26,8 @@ export function AppLayout() {
     <div className="relative isolate h-full flex flex-col rounded-window overflow-hidden bg-surface ring-1 ring-inset ring-outline-variant">
       {/* 壁纸背景层：位于所有内容之下，避免影响 fixed 弹窗定位 */}
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        {/*
-         * 背景层向右多出血 60px：cover 模式下图片宽度大于窗口，
-         * 盒宽拉大后居中裁切会向左偏移，内嵌在壁纸左上角的 logo
-         * 因此整体右移、完整避开左侧栏，同时保留无裁切的完整画面高度。
-         */}
         <div
-          className="absolute inset-y-0 left-0 right-[-60px] bg-cover bg-center bg-no-repeat transition-all duration-300"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-all duration-300"
           style={{
             backgroundImage: "var(--background-image)",
             backgroundColor: "var(--background-solid)",
@@ -47,12 +42,12 @@ export function AppLayout() {
         onOpenSearch={() => setPaletteOpen(true)}
       />
       <div className="flex-1 flex overflow-hidden relative">
-        <Sidebar />
         <ContentArea>
           <Outlet />
         </ContentArea>
         <TaskPanel open={taskPanelOpen} onClose={() => setTaskPanelOpen(false)} />
       </div>
+      <BottomNav />
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>

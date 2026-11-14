@@ -1,8 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   EasytierConfig,
+  EasytierDiagnostics,
   EasytierInstallInfo,
   EasytierStatus,
+  LanWorld,
 } from "../types/easytier";
 
 /**
@@ -40,4 +42,15 @@ export const easytierService = {
    */
   pingServer: (peer: string) =>
     invoke<number>("ping_easytier_server", { peer }),
+
+  /**
+   * 联机环境自检（核心、中转、端口、权限、网卡）
+   */
+  getDiagnostics: () => invoke<EasytierDiagnostics>("get_easytier_diagnostics"),
+
+  /**
+   * 监听游戏局域网广播，识别真实端口
+   */
+  discoverLanWorlds: (timeoutMs?: number) =>
+    invoke<LanWorld[]>("discover_lan_worlds", { timeoutMs }),
 };

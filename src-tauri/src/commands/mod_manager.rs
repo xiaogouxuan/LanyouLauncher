@@ -3,6 +3,7 @@ use crate::i18n_err;
 use crate::models::mod_info::{DownloadedModFile, ModInfo, ModSource, ModVersionInfo};
 use crate::state::app_state::AppState;
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use std::collections::HashMap;
 use tauri::State;
 use tauri_plugin_dialog::DialogExt;
@@ -16,13 +17,22 @@ struct ModsIndex {
     entries: HashMap<String, InstalledModMeta>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct InstalledModMeta {
     project_id: String,
     version_id: String,
     version: String,
     source: String,
     name: String,
+    /// 图标地址（识别后从 Modrinth / CurseForge 补齐）
+    #[serde(default)]
+    icon_url: Option<String>,
+    /// 简介
+    #[serde(default)]
+    description: Option<String>,
+    /// 支持的游戏版本
+    #[serde(default)]
+    game_version: Option<String>,
 }
 
 fn load_mods_index(mods_dir: &std::path::Path) -> ModsIndex {
@@ -179,6 +189,7 @@ pub async fn download_mod(
             version: downloaded.version_number.clone(),
             source: source.clone(),
             name: downloaded.name.clone(),
+            ..Default::default()
         },
     );
     // 清理已不存在的旧条目
@@ -310,26 +321,34 @@ pub async fn get_installed_mods(
     state: State<'_, AppState>,
     target_version: Option<String>,
 ) -> Result<Vec<ModInfo>, I18nError> {
+    collect_installed_mods(&state.minecraft_dir, target_version.as_deref())
+}
+
+/// 扫描指定范围下的所有 Mod 文件并组装成列表
+fn collect_installed_mods(
+    minecraft_dir: &std::path::Path,
+    target_version: Option<&str>,
+) -> Result<Vec<ModInfo>, I18nError> {
     let mut results = Vec::new();
 
     if let Some(version_id) = target_version {
         let mods_dir = crate::utils::paths::get_mods_dir_for_version(
-            &state.minecraft_dir,
-            Some(&version_id),
+            minecraft_dir,
+            Some(version_id),
         );
         let is_isolated = crate::services::version::meta::read_version_meta(
-            &state.minecraft_dir,
-            &version_id,
+            minecraft_dir,
+            version_id,
         )
         .is_isolated;
-        read_mods_in_dir(&mods_dir, &version_id, is_isolated, &mut results)?;
+        read_mods_in_dir(&mods_dir, version_id, is_isolated, &mut results)?;
     } else {
         // 扫描全局 mods
-        let global_dir = crate::utils::paths::get_global_mods_dir(&state.minecraft_dir);
+        let global_dir = crate::utils::paths::get_global_mods_dir(minecraft_dir);
         read_mods_in_dir(&global_dir, "global", false, &mut results)?;
 
         // 扫描各版本隔离 mods
-        let versions_dir = crate::utils::paths::get_versions_dir(&state.minecraft_dir);
+        let versions_dir = crate::utils::paths::get_versions_dir(minecraft_dir);
         if let Ok(entries) = std::fs::read_dir(&versions_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -342,7 +361,7 @@ pub async fn get_installed_mods(
                     .unwrap_or("unknown")
                     .to_string();
                 let meta = crate::services::version::meta::read_version_meta(
-                    &state.minecraft_dir,
+                    minecraft_dir,
                     &version_id,
                 );
                 if !meta.is_isolated {
@@ -394,9 +413,13 @@ fn read_mods_in_dir(
                 version_id: meta.map(|m| m.version_id.clone()).unwrap_or_default(),
                 file_name: Some(file_name.to_string()),
                 loader: crate::models::version::LoaderType::Fabric,
-                game_version: String::new(),
-                description: String::new(),
-                icon_url: None,
+                game_version: meta
+                    .and_then(|m| m.game_version.clone())
+                    .unwrap_or_default(),
+                description: meta
+                    .and_then(|m| m.description.clone())
+                    .unwrap_or_default(),
+                icon_url: meta.and_then(|m| m.icon_url.clone()),
                 source: match meta {
                     Some(m) if m.source == "CurseForge" => ModSource::CurseForge,
                     _ => ModSource::Modrinth,
@@ -411,6 +434,181 @@ fn read_mods_in_dir(
     }
 
     Ok(())
+}
+
+const MODRINTH_API_BASE: &str = "https://api.modrinth.com/v2";
+
+#[derive(Debug, Deserialize)]
+struct ModrinthVersionFile {
+    id: String,
+    project_id: String,
+    name: String,
+    version_number: String,
+    #[serde(default)]
+    game_versions: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModrinthProjectBrief {
+    id: String,
+    title: String,
+    #[serde(default)]
+    description: String,
+    icon_url: Option<String>,
+    #[serde(default)]
+    game_versions: Vec<String>,
+}
+
+/// 用文件 SHA-512 去 Modrinth 反查本地 Mod 的真实信息
+///
+/// 用户直接拖进 mods 目录的 Mod 没有索引记录，列表里只能显示文件名和问号图标。
+/// 这里按文件哈希查回项目 ID、名称、简介、图标和游戏版本，写进索引后
+/// 列表和详情页都能显示完整信息，也能像正常安装的 Mod 一样检查更新。
+#[tauri::command]
+pub async fn identify_installed_mods(
+    state: State<'_, AppState>,
+    target_version: Option<String>,
+) -> Result<Vec<ModInfo>, I18nError> {
+    let mods_dir = crate::utils::paths::get_mods_dir_for_version(
+        &state.minecraft_dir,
+        target_version.as_deref(),
+    );
+
+    if mods_dir.exists() {
+        let mut index = load_mods_index(&mods_dir);
+
+        // 收集还没有图标的 Mod（有图标说明之前已经识别过）
+        let mut pending: Vec<(String, std::path::PathBuf)> = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&mods_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let file_name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                if !path.is_file()
+                    || !(file_name.ends_with(".jar") || file_name.ends_with(".jar.disabled"))
+                {
+                    continue;
+                }
+                let base_name = file_name.trim_end_matches(".disabled").to_string();
+                let known = index
+                    .entries
+                    .get(&base_name)
+                    .map(|meta| meta.icon_url.is_some())
+                    .unwrap_or(false);
+                if known {
+                    continue;
+                }
+                pending.push((base_name, path));
+            }
+        }
+
+        if !pending.is_empty() {
+            // 1. 计算文件哈希
+            let mut hashes = Vec::new();
+            let mut hash_to_file: HashMap<String, String> = HashMap::new();
+            for (base_name, path) in &pending {
+                let Ok(bytes) = std::fs::read(path) else {
+                    continue;
+                };
+                let mut hasher = sha2::Sha512::new();
+                sha2::Digest::update(&mut hasher, &bytes);
+                let digest = sha2::Digest::finalize(hasher);
+                let hash: String = digest.iter().map(|b| format!("{:02x}", b)).collect();
+                hash_to_file.insert(hash.clone(), base_name.clone());
+                hashes.push(hash);
+            }
+
+            // 2. 按哈希查版本；网络失败时静默保留原样，不影响列表
+            if !hashes.is_empty() {
+                let response = state
+                    .http_client
+                    .post(format!("{}/version_files", MODRINTH_API_BASE))
+                    .json(&serde_json::json!({ "hashes": hashes, "algorithm": "sha512" }))
+                    .send()
+                    .await;
+
+                if let Ok(response) = response {
+                    if response.status().is_success() {
+                        if let Ok(versions) = response
+                            .json::<HashMap<String, ModrinthVersionFile>>()
+                            .await
+                        {
+                            // 3. 批量查项目详情（标题、简介、图标）
+                            let project_ids: Vec<String> = versions
+                                .values()
+                                .map(|v| v.project_id.clone())
+                                .collect::<std::collections::HashSet<_>>()
+                                .into_iter()
+                                .collect();
+                            let projects = fetch_modrinth_projects(&state, &project_ids)
+                                .await
+                                .unwrap_or_default();
+
+                            for (hash, version) in versions {
+                                let Some(base_name) = hash_to_file.get(&hash) else {
+                                    continue;
+                                };
+                                let project = projects.get(&version.project_id);
+                                index.entries.insert(
+                                    base_name.clone(),
+                                    InstalledModMeta {
+                                        project_id: version.project_id.clone(),
+                                        version_id: version.id,
+                                        version: version.version_number,
+                                        source: "Modrinth".to_string(),
+                                        name: project
+                                            .map(|p| p.title.clone())
+                                            .unwrap_or(version.name),
+                                        icon_url: project.and_then(|p| p.icon_url.clone()),
+                                        description: project.map(|p| p.description.clone()),
+                                        game_version: project
+                                            .and_then(|p| p.game_versions.first().cloned())
+                                            .or_else(|| version.game_versions.first().cloned()),
+                                    },
+                                );
+                            }
+                            save_mods_index(&mods_dir, &index);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    collect_installed_mods(&state.minecraft_dir, target_version.as_deref())
+}
+
+/// 批量拉取 Modrinth 项目简介信息
+async fn fetch_modrinth_projects(
+    state: &AppState,
+    ids: &[String],
+) -> Result<HashMap<String, ModrinthProjectBrief>, I18nError> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let ids_param = serde_json::to_string(ids)
+        .map_err(|e| i18n_err!("errors.mod.parseProjectDetailsFailed", e))?;
+    let response = state
+        .http_client
+        .get(format!("{}/projects", MODRINTH_API_BASE))
+        .query(&[("ids", ids_param)])
+        .send()
+        .await
+        .map_err(|e| i18n_err!("errors.mod.fetchModrinthProjectFailed", e))?;
+
+    let projects: Vec<ModrinthProjectBrief> = response
+        .json()
+        .await
+        .map_err(|e| i18n_err!("errors.mod.parseProjectDetailsFailed", e))?;
+
+    Ok(projects
+        .into_iter()
+        .map(|project| (project.id.clone(), project))
+        .collect())
 }
 
 /// 删除同 Mod 旧文件
@@ -463,15 +661,18 @@ pub async fn toggle_mod(
         &state.minecraft_dir,
         target_version.as_deref(),
     );
+    // 前端传进来的是磁盘上的真实文件名，禁用状态下带有 .disabled 后缀，
+    // 先归一化掉，否则会拼成 xxx.jar.disabled.disabled 导致「未找到 Mod 文件」
+    let base_name = mod_id.trim_end_matches(".disabled").to_string();
     let from_name = if enabled {
-        format!("{}.disabled", mod_id)
+        format!("{}.disabled", base_name)
     } else {
-        mod_id.clone()
+        base_name.clone()
     };
     let to_name = if enabled {
-        mod_id.clone()
+        base_name.clone()
     } else {
-        format!("{}.disabled", mod_id)
+        format!("{}.disabled", base_name)
     };
 
     let from = mods_dir.join(from_name);
@@ -498,9 +699,11 @@ pub async fn delete_mod(
         &state.minecraft_dir,
         target_version.as_deref(),
     );
+    // 同样先归一化 .disabled 后缀，删除时两种命名都能命中
+    let base_name = mod_id.trim_end_matches(".disabled").to_string();
     let paths = [
-        mods_dir.join(&mod_id),
-        mods_dir.join(format!("{}.disabled", mod_id)),
+        mods_dir.join(&base_name),
+        mods_dir.join(format!("{}.disabled", base_name)),
     ];
 
     for path in paths {

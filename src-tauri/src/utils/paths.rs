@@ -10,9 +10,31 @@ pub fn get_launcher_dir() -> PathBuf {
 }
 
 /// 获取默认 Minecraft 目录
-/// 便携设计：放在启动器 exe 所在目录下的 .minecraft 中
+///
+/// 便携设计，优先复用本机已有的游戏目录：
+/// 1. exe 直接放在 `.minecraft` 根目录里（常见的 HMCL/PCL 便携布局）→ 直接使用该目录
+/// 2. exe 与 `versions` 目录同级（PCL/HMCL 绿色版根目录）→ 把 exe 所在目录当作游戏目录
+/// 3. 其余情况 → exe 目录下的 `.minecraft`
 pub fn get_default_minecraft_dir() -> PathBuf {
-    get_exe_dir().join(".minecraft")
+    let exe_dir = get_exe_dir();
+
+    let is_minecraft_root = exe_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.eq_ignore_ascii_case(".minecraft"))
+        .unwrap_or(false);
+    if is_minecraft_root {
+        return exe_dir;
+    }
+
+    // exe 与 versions 同级，且自身没有 .minecraft 子目录：视为绿色版游戏根目录
+    let has_versions = exe_dir.join("versions").is_dir();
+    let has_nested_minecraft = exe_dir.join(".minecraft").is_dir();
+    if has_versions && !has_nested_minecraft {
+        return exe_dir;
+    }
+
+    exe_dir.join(".minecraft")
 }
 
 /// 获取启动器 exe 所在目录
@@ -50,9 +72,9 @@ pub fn get_mods_dir_for_version(
             .unwrap_or(false);
 
         if is_isolated {
-            return get_versions_dir(minecraft_dir)
-                .join(id)
-                .join("mods");
+            // 与启动时的游戏目录保持一致：优先 versions/<id>/.minecraft，
+            // 否则使用 HMCL/PCL 风格的 versions/<id>
+            return get_version_instance_dir(minecraft_dir, id).join("mods");
         }
     }
     get_global_mods_dir(minecraft_dir)
@@ -74,6 +96,19 @@ pub fn get_version_isolation_dir(minecraft_dir: &std::path::Path, version_id: &s
     get_versions_dir(minecraft_dir)
         .join(version_id)
         .join(".minecraft")
+}
+
+/// 获取版本的实例目录（真正存放 mods/saves/options.txt 的地方）
+///
+/// 兼容多种启动器的隔离布局：
+/// - 有 `versions/<id>/.minecraft` → 使用该目录（本启动器早期的隔离布局）
+/// - 否则使用 `versions/<id>` 本身（HMCL / PCL 的版本隔离目录）
+pub fn get_version_instance_dir(minecraft_dir: &std::path::Path, version_id: &str) -> PathBuf {
+    let isolation_dir = get_version_isolation_dir(minecraft_dir, version_id);
+    if isolation_dir.is_dir() {
+        return isolation_dir;
+    }
+    get_versions_dir(minecraft_dir).join(version_id)
 }
 
 /// 获取启动器为该版本保存的元数据文件路径

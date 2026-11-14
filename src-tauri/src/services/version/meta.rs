@@ -28,21 +28,37 @@ pub fn save_version_meta(
 }
 
 /// 获取版本实际使用的游戏目录
-/// - 启用了隔离且未指定自定义目录：返回 versions/<id>/.minecraft
+/// - 启用了隔离且未指定自定义目录：返回版本实例目录
+///   （有 `versions/<id>/.minecraft` 用之，否则用 HMCL/PCL 风格的 `versions/<id>`）
 /// - 启用了隔离且指定了自定义目录：返回自定义目录
 /// - 未启用隔离：返回 minecraft_dir
+///
+/// 另外兼容 HMCL/PCL 的隔离实例：它们不会写 lanyou.json，
+/// 但如果 `versions/<id>` 下已经有 mods/saves/.minecraft，
+/// 说明这是一个独立实例，仍按隔离目录启动。
 pub fn resolve_version_game_dir(
     minecraft_dir: &Path,
     version_id: &str,
     meta: &VersionMeta,
 ) -> std::path::PathBuf {
     if !meta.is_isolated {
+        if version_has_own_instance(minecraft_dir, version_id) {
+            return crate::utils::paths::get_version_instance_dir(minecraft_dir, version_id);
+        }
         return minecraft_dir.to_path_buf();
     }
 
     if meta.game_dir.is_empty() {
-        crate::utils::paths::get_version_isolation_dir(minecraft_dir, version_id)
+        crate::utils::paths::get_version_instance_dir(minecraft_dir, version_id)
     } else {
         Path::new(&meta.game_dir).to_path_buf()
     }
+}
+
+/// 判断版本目录是否是外部启动器（HMCL/PCL）留下的隔离实例
+fn version_has_own_instance(minecraft_dir: &Path, version_id: &str) -> bool {
+    let version_dir = crate::utils::paths::get_versions_dir(minecraft_dir).join(version_id);
+    version_dir.join(".minecraft").is_dir()
+        || version_dir.join("mods").is_dir()
+        || version_dir.join("saves").is_dir()
 }

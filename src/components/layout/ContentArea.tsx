@@ -20,7 +20,7 @@ export function ContentArea({ children }: ContentAreaProps) {
 
   return (
     <main ref={scrollRef} className="relative flex-1 overflow-y-auto overflow-x-hidden isolate">
-      <div className="relative z-[1] min-h-full">{children}</div>
+      <div className="relative z-[1] flex min-h-full flex-col">{children}</div>
     </main>
   );
 }

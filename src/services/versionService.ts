@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { VersionInfo, DownloadProgress, ExportOption, LoaderVersionInfo } from "@/types/version";
+import type { VersionInfo, DownloadProgress, ExportOption, LoaderVersionInfo, ModpackFormat, ImportedModpack } from "@/types/version";
 import type { LoaderType } from "@/types/version";
 import type { DownloadSource } from "@/types/settings";
 import { useTaskStore } from "@/stores/taskStore";
@@ -95,5 +95,10 @@ export const versionService = {
 
   async openVersionDir(versionId: string): Promise<void> {
     return invoke("open_version_dir", { versionId });
+  },
+
+  /** 导入整合包：缺少的原版/加载器会自动补齐 */
+  async importModpack(path: string, format: ModpackFormat): Promise<ImportedModpack> {
+    return invoke<ImportedModpack>("import_modpack", { path, format });
   },
 };

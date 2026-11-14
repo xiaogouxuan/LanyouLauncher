@@ -1,7 +1,9 @@
-export const APP_NAME = "LanyouLauncher-Beta";
-export const APP_VERSION = "0.5.4-beta";
+export const APP_NAME = "LanyouLauncher";
+export const APP_VERSION = "1.0.0";
 export const GITEE_REPO = "https://gitee.com/xiaogouxuan/lanyou-launcher";
 export const GITHUB_REPO = "https://github.com/xiaogouxuan/LanyouLauncher";
+export const AUTHOR_NAME = "Minecraft小狗轩";
+export const AUTHOR_URL = "https://github.com/xiaogouxuan/";
 export const BILIBILI_URL = "https://space.bilibili.com/3546803513329823?spm_id_from=333.1007.0.0";
 export const CONTACT_EMAIL = "mc1b2t@126.com";
 

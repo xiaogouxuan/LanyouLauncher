@@ -52,6 +52,10 @@ pub struct Settings {
     pub background_blur: f32,
     /// 主题主色（HEX 格式，如 #2F6BFF）
     pub theme_color: String,
+    /// 主题色是否跟随内置壁纸（手动选色后为 false）
+    pub theme_color_auto: bool,
+    /// 界面材质：solid / frosted / liquid
+    pub ui_material: String,
     /// 游戏启动成功后是否关闭启动器
     pub close_after_launch: bool,
 }
@@ -72,6 +76,8 @@ impl Default for Settings {
             background_opacity: 1.0,
             background_blur: 0.0,
             theme_color: "#2F6BFF".to_string(),
+            theme_color_auto: true,
+            ui_material: "solid".to_string(),
             close_after_launch: false,
         }
     }

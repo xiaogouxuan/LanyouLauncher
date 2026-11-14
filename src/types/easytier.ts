@@ -20,6 +20,8 @@ export interface EasytierStatus {
   auto_ip: boolean;
   started_at: number | null;
   detected_ip: string | null;
+  /** 本次连接模式：relay = 中转，p2p = 直连兜底 */
+  mode: string;
   logs: EasytierLogEntry[];
 }
 
@@ -31,6 +33,28 @@ export interface EasytierConfig {
   network_secret: string;
   peers: string[];
   virtual_ip: string;
+  /** auto（中转优先，默认）/ relay / p2p */
+  mode?: string;
+}
+
+/** 单项联机自检结果 */
+export interface EasytierCheck {
+  id: string;
+  status: "ok" | "warn" | "error";
+  detail: string;
+  fixable: boolean;
+}
+
+/** 联机自检报告 */
+export interface EasytierDiagnostics {
+  checks: EasytierCheck[];
+  recommended_mode: "relay" | "p2p";
+}
+
+/** 局域网广播中发现的世界 */
+export interface LanWorld {
+  motd: string;
+  port: number;
 }
 
 /**

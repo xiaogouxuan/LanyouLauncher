@@ -43,10 +43,42 @@ export interface DownloadProgress {
   stage?: string;
 }
 
-export type ExportContentKey = "manifest" | "versionJson" | "assets" | "libraries" | "mods" | "saves" | "options" | "resourcepacks" | "shaderpacks";
+export type ExportContentKey =
+  | "manifest"
+  | "versionJson"
+  | "assets"
+  | "libraries"
+  | "mods"
+  | "saves"
+  | "options"
+  | "resourcepacks"
+  | "shaderpacks"
+  | "config";
 
 export interface ExportOption {
   key: ExportContentKey;
   label: string;
   checked: boolean;
+}
+
+/** 整合包导入格式，auto 为自动识别（推荐） */
+export type ModpackFormat = "auto" | "curseforge" | "modrinth" | "lanyou";
+
+/** 整合包导入进度事件 */
+export interface ModpackImportProgress {
+  stage: "prepare" | "version" | "loader" | "extract" | "mods" | "finish";
+  current: number;
+  total: number;
+  message: string;
+}
+
+/** 整合包导入结果 */
+export interface ImportedModpack {
+  version_id: string;
+  name: string;
+  game_version: string;
+  loader: LoaderType | null;
+  loader_version: string | null;
+  mods_installed: number;
+  mods_failed: number;
 }

@@ -1,6 +1,6 @@
 [package]
 name = "lanyou-launcher"
-version = "0.5.4"
+version = "1.0.0"
 description = "LanyouLauncher - A modern Minecraft launcher"
 authors = ["1B2T服务器维护团队"]
 license = "GPL-3.0-only"

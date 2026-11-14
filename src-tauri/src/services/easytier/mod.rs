@@ -56,6 +56,9 @@ pub struct EasytierConfig {
     /// 虚拟 IPv4 地址，留空时由 EasyTier 自动分配
     #[serde(default)]
     pub virtual_ip: String,
+    /// 连接模式：auto（默认，中转优先）/ relay（强制中转）/ p2p（强制直连兜底）
+    #[serde(default)]
+    pub mode: Option<String>,
 }
 
 /// 单条联机日志
@@ -86,6 +89,8 @@ pub struct EasytierRuntime {
     pub detected_ip: Arc<Mutex<Option<String>>>,
     /// 上次探测虚拟地址的时间
     pub last_ip_probe: Option<Instant>,
+    /// 本次实际使用的连接模式（relay / p2p）
+    pub mode: String,
 }
 
 impl Default for EasytierRuntime {
@@ -100,6 +105,7 @@ impl Default for EasytierRuntime {
             logs: Arc::new(Mutex::new(Vec::new())),
             detected_ip: Arc::new(Mutex::new(None)),
             last_ip_probe: None,
+            mode: "relay".to_string(),
         }
     }
 }
@@ -125,6 +131,8 @@ pub struct EasytierStatus {
     pub started_at: Option<i64>,
     /// 探测到的虚拟地址
     pub detected_ip: Option<String>,
+    /// 本次使用的连接模式（relay = 中转，p2p = 直连兜底）
+    pub mode: String,
     /// 运行日志
     pub logs: Vec<EasytierLogEntry>,
 }
@@ -394,6 +402,147 @@ fn now_millis() -> i64 {
         .unwrap_or(0)
 }
 
+/// 中转节点 TCP 连通性探测，返回延迟毫秒
+pub fn probe_relay(peer: &str) -> Option<u64> {
+    use std::net::ToSocketAddrs;
+
+    let target = peer
+        .trim()
+        .trim_start_matches("tcp://")
+        .trim_start_matches("udp://");
+    let addrs = target.to_socket_addrs().ok()?;
+    for addr in addrs.take(2) {
+        let started = Instant::now();
+        if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(1500)).is_ok() {
+            return Some(started.elapsed().as_millis() as u64);
+        }
+    }
+    None
+}
+
+/// 中转节点是否可用（决定走中转还是退回 P2P）
+fn relay_reachable(peer: &str) -> bool {
+    probe_relay(peer).is_some()
+}
+
+/// 单项联机自检结果
+#[derive(Debug, Clone, Serialize)]
+pub struct EasytierCheck {
+    /// 检查项标识，前端据此显示文案
+    pub id: String,
+    /// ok / warn / error
+    pub status: String,
+    /// 附加信息（延迟、版本号、占用情况等）
+    pub detail: String,
+    /// 是否支持一键修复
+    pub fixable: bool,
+}
+
+/// 联机自检报告
+#[derive(Debug, Clone, Serialize)]
+pub struct EasytierDiagnostics {
+    pub checks: Vec<EasytierCheck>,
+    /// 推荐连接模式：relay / p2p
+    pub recommended_mode: String,
+}
+
+/// 运行一条系统命令并收集输出（隐藏窗口）
+#[cfg(target_os = "windows")]
+fn run_hidden(program: &str, args: &[&str]) -> Option<String> {
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    apply_no_window(&mut command);
+    let output = command.output().ok()?;
+    Some(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// 联机环境自检：核心组件、中转节点、端口、权限、虚拟网卡、防火墙
+pub fn diagnose(state: &AppState) -> EasytierDiagnostics {
+    let mut checks = Vec::new();
+
+    // 1. 联机核心
+    let (installed, version) = get_installed_info(state);
+    checks.push(EasytierCheck {
+        id: "core".into(),
+        status: if installed { "ok" } else { "error" }.into(),
+        detail: if installed { version } else { String::new() },
+        fixable: !installed,
+    });
+
+    // 2. 中转节点
+    let latency = probe_relay(PUBLIC_SHARED_NODE);
+    checks.push(EasytierCheck {
+        id: "relay".into(),
+        status: if latency.is_some() { "ok" } else { "warn" }.into(),
+        detail: latency.map(|ms| ms.to_string()).unwrap_or_default(),
+        fixable: false,
+    });
+
+    // 3. 局域网世界：监听游戏广播，拿到真实端口（单机开房是 5xxxx，不一定是 25565）
+    let worlds = crate::services::lan_discovery::discover(Duration::from_millis(1200));
+    let lan_port = worlds.first().map(|world| world.port);
+    checks.push(EasytierCheck {
+        id: "lan".into(),
+        status: if lan_port.is_some() { "ok" } else { "warn" }.into(),
+        detail: lan_port.map(|port| port.to_string()).unwrap_or_default(),
+        fixable: false,
+    });
+
+    // 4. 管理员权限（创建 TUN 虚拟网卡需要）
+    #[cfg(target_os = "windows")]
+    let is_admin = {
+        let mut command = Command::new("net");
+        command
+            .arg("session")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        apply_no_window(&mut command);
+        command.status().map(|status| status.success()).unwrap_or(false)
+    };
+    #[cfg(not(target_os = "windows"))]
+    let is_admin = true;
+    checks.push(EasytierCheck {
+        id: "admin".into(),
+        status: if is_admin { "ok" } else { "warn" }.into(),
+        detail: String::new(),
+        fixable: false,
+    });
+
+    // 5. 虚拟网卡（首次开房会自动创建，这里仅提示是否已就绪）
+    #[cfg(target_os = "windows")]
+    let adapter_ready = run_hidden(
+        "powershell",
+        &[
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "(Get-NetAdapter | Where-Object { $_.InterfaceDescription -like '*EasyTier*' -or $_.Name -like '*EasyTier*' } | Select-Object -First 1).Name",
+        ],
+    )
+    .map(|output| !output.trim().is_empty())
+    .unwrap_or(false);
+    #[cfg(not(target_os = "windows"))]
+    let adapter_ready = true;
+    checks.push(EasytierCheck {
+        id: "adapter".into(),
+        status: if adapter_ready { "ok" } else { "warn" }.into(),
+        detail: String::new(),
+        fixable: false,
+    });
+
+    // 6. 虚拟网卡已在上方检查；防火墙规则交给系统默认策略，不再单独检测
+
+    EasytierDiagnostics {
+        recommended_mode: if latency.is_some() { "relay" } else { "p2p" }.into(),
+        checks,
+    }
+}
+
 /// 刷新进程状态：进程已退出时清理运行时信息
 fn refresh_running_state(runtime: &mut EasytierRuntime) -> bool {
     let exited = match runtime.child.as_mut() {
@@ -478,6 +627,7 @@ pub fn snapshot(state: &AppState) -> EasytierStatus {
         auto_ip: runtime.auto_ip,
         started_at: runtime.started_at,
         detected_ip,
+        mode: runtime.mode.clone(),
         logs,
     }
 }
@@ -533,6 +683,24 @@ pub fn start(state: &AppState, config: EasytierConfig) -> Result<EasytierStatus,
     for peer in &peers {
         command.arg("-p").arg(peer);
     }
+
+    // 连接策略：默认中转优先——服务器链路稳定、延迟可控；
+    // 只有在所有中转节点都连不上时才退回 P2P，避免跨运营商打洞成功但绕路更卡。
+    let requested = config.mode.as_deref().unwrap_or("auto");
+    let actual_mode = match requested {
+        "relay" => "relay",
+        "p2p" => "p2p",
+        _ => {
+            if peers.iter().any(|peer| relay_reachable(peer)) {
+                "relay"
+            } else {
+                "p2p"
+            }
+        }
+    };
+    if actual_mode == "relay" {
+        command.arg("--disable-p2p").arg("true");
+    }
     if virtual_ip.is_empty() {
         command.arg("-d");
     } else {
@@ -572,6 +740,7 @@ pub fn start(state: &AppState, config: EasytierConfig) -> Result<EasytierStatus,
     runtime.logs = logs;
     runtime.detected_ip = detected_ip;
     runtime.last_ip_probe = None;
+    runtime.mode = actual_mode.to_string();
 
     // 必须先释放运行时锁，状态快照会再次获取同一把锁
     drop(runtime);

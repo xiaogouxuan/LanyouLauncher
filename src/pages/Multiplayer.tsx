@@ -30,7 +30,7 @@ import { launchService } from "@/services/launchService";
 import { useAccountStore } from "@/stores/accountStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useVersionStore } from "@/stores/versionStore";
-import type { EasytierStatus } from "@/types/easytier";
+import type { EasytierCheck, EasytierDiagnostics, EasytierStatus } from "@/types/easytier";
 import type { LaunchConfig, LogEntry } from "@/types/launch";
 import { formatError } from "@/utils/format";
 import { parseI18nError } from "@/utils/i18nError";
@@ -39,6 +39,41 @@ import { parseI18nError } from "@/utils/i18nError";
 const STORAGE_KEY = "lanyou.easytier.config";
 /** 图文教程是否已自动展示过 */
 const TUTORIAL_KEY = "lanyou.multiplayer.tutorial.v1";
+
+/** 自检状态对应的圆点颜色 */
+const CHECK_DOT: Record<EasytierCheck["status"], string> = {
+  ok: "bg-emerald-500",
+  warn: "bg-amber-500",
+  error: "bg-red-500",
+};
+
+/** 把后端的自检结果翻译成人话 */
+function describeCheck(
+  check: EasytierCheck,
+  t: (key: string, params?: Record<string, string>) => string,
+): string {
+  const ok = check.status === "ok";
+  switch (check.id) {
+    case "core":
+      return ok ? check.detail : t("multiplayer.diagDetailCoreMissing");
+    case "relay":
+      return ok
+        ? t("multiplayer.diagDetailRelay", { ms: check.detail })
+        : t("multiplayer.diagDetailRelayFail");
+    case "lan":
+      return ok
+        ? t("multiplayer.diagDetailLanFound", { port: check.detail })
+        : t("multiplayer.diagDetailLanMissing");
+    case "admin":
+      return ok ? t("multiplayer.diagDetailAdminOk") : t("multiplayer.diagDetailAdminWarn");
+    case "adapter":
+      return ok
+        ? t("multiplayer.diagDetailAdapterOk")
+        : t("multiplayer.diagDetailAdapterWarn");
+    default:
+      return "";
+  }
+}
 /** 密钥字符集，去掉容易混淆的 0/O/1/I */
 const SECRET_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -244,6 +279,7 @@ export function Multiplayer() {
     localStorage.getItem(ROLE_KEY) === "guest" ? "guest" : "host"
   );
   const [lanPort, setLanPort] = useState("");
+  const [detectingPort, setDetectingPort] = useState(false);
   const [hostAddress, setHostAddress] = useState<RoomAddress | null>(null);
   const [launching, setLaunching] = useState(false);
   const [joinCode, setJoinCode] = useState("");
@@ -260,6 +296,9 @@ export function Multiplayer() {
     () => !localStorage.getItem(TUTORIAL_KEY)
   );
   const [now, setNow] = useState(() => Date.now());
+  /** 联机环境自检结果 */
+  const [diagnostics, setDiagnostics] = useState<EasytierDiagnostics | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
   /** 一键进服使用最近选择的版本 */
@@ -459,6 +498,8 @@ export function Multiplayer() {
         network_secret: target.secret.trim(),
         peers: [server.peers],
         virtual_ip: "",
+        // 中转优先：服务器链路稳定；连不上时后端会自动退回 P2P
+        mode: "auto",
       });
       setStatus(next);
       showToast("success", t("multiplayer.started"));
@@ -466,6 +507,55 @@ export function Multiplayer() {
       showToast("error", parseI18nError(error));
     } finally {
       setStarting(false);
+    }
+  };
+
+  /**
+   * 环境自检：开房前把容易导致连不上的项一次查清
+   */
+  const runDiagnostics = async () => {
+    setDiagnosing(true);
+    try {
+      const report = await easytierService.getDiagnostics();
+      setDiagnostics(report);
+    } catch (error) {
+      showToast("error", parseI18nError(error));
+    } finally {
+      setDiagnosing(false);
+    }
+  };
+
+  // 进入页面后自动跑一次自检，失败项用户可以直接看到
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void runDiagnostics();
+    }, 700);
+    return () => window.clearTimeout(timer);
+    // 只在首次挂载时执行
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * 自动识别端口：监听游戏局域网广播，拿到真实端口
+   */
+  const handleDetectPort = async () => {
+    setDetectingPort(true);
+    try {
+      const worlds = await easytierService.discoverLanWorlds(2200);
+      if (worlds.length === 0) {
+        showToast("info", t("multiplayer.detectPortNone"));
+        return;
+      }
+      const world = worlds[0];
+      setLanPort(String(world.port));
+      showToast(
+        "success",
+        t("multiplayer.detectPortOk", { name: world.motd, port: String(world.port) }),
+      );
+    } catch (error) {
+      showToast("error", parseI18nError(error));
+    } finally {
+      setDetectingPort(false);
     }
   };
 
@@ -764,6 +854,13 @@ export function Multiplayer() {
                     {t("multiplayer.pidLabel", { pid: String(status.pid) })}
                   </span>
                 )}
+                {running && status?.mode && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-[3px] bg-primary/10 text-primary">
+                    {status.mode === "relay"
+                      ? t("multiplayer.modeRelay")
+                      : t("multiplayer.modeP2p")}
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-on-surface-subtle mt-0.5 truncate">
                 {running
@@ -928,6 +1025,51 @@ export function Multiplayer() {
             </div>
           </Section>
         )}
+
+        <Section icon={<Signal size={15} />} title={t("multiplayer.diagTitle")}>
+          <div className="px-4 py-3 space-y-2.5">
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-[11px] text-on-surface-subtle leading-relaxed">
+                {diagnostics
+                  ? diagnostics.recommended_mode === "relay"
+                    ? t("multiplayer.diagRecommendedRelay")
+                    : t("multiplayer.diagRecommendedP2p")
+                  : t("multiplayer.diagSubtitle")}
+              </p>
+              <Button
+                variant="tonal"
+                size="sm"
+                loading={diagnosing}
+                onClick={() => void runDiagnostics()}
+                className="shrink-0"
+              >
+                <RefreshCw size={13} />
+                {diagnosing ? t("multiplayer.diagRunning") : t("multiplayer.diagRun")}
+              </Button>
+            </div>
+
+            {diagnostics && (
+              <div className="space-y-1.5">
+                {diagnostics.checks.map((check) => (
+                  <div
+                    key={check.id}
+                    className="flex items-center gap-2 rounded-[6px] bg-surface-container/60 px-2.5 py-2"
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${CHECK_DOT[check.status]}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12px] text-on-surface">
+                        {t(`multiplayer.diagItem.${check.id}`)}
+                      </p>
+                      <p className="text-[10.5px] text-on-surface-subtle leading-relaxed">
+                        {describeCheck(check, t)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Section>
 
         <Section icon={<BookOpen size={15} />} title={t("multiplayer.guideTitle")}>
           <div className="px-4 py-3.5 space-y-2.5">
@@ -1111,13 +1253,25 @@ export function Multiplayer() {
               <label className="text-xs font-medium text-on-surface-variant">
                 {t("multiplayer.roomPort")}
               </label>
-              <Input
-                placeholder="10000-65535"
-                value={lanPort}
-                maxLength={5}
-                disabled={running}
-                onChange={(event) => setLanPort(event.target.value.replace(/\D/g, ""))}
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="10000-65535"
+                  value={lanPort}
+                  maxLength={5}
+                  disabled={running}
+                  onChange={(event) => setLanPort(event.target.value.replace(/\D/g, ""))}
+                />
+                <Button
+                  variant="text"
+                  size="sm"
+                  loading={detectingPort}
+                  disabled={running}
+                  onClick={() => void handleDetectPort()}
+                  className="shrink-0"
+                >
+                  {detectingPort ? t("multiplayer.detectingPort") : t("multiplayer.detectPort")}
+                </Button>
+              </div>
               <p className="text-[10.5px] text-on-surface-subtle px-0.5">
                 {t("multiplayer.roomPortHint")}
               </p>

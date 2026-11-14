@@ -12,6 +12,7 @@ type ButtonVariant =
   | "elevated"
   | "outlined"
   | "text"
+  | "quiet"
   | "ghost"
   | "danger";
 
@@ -32,7 +33,7 @@ function normalizeVariant(variant: ButtonVariant): ButtonVariant {
 }
 
 const baseStyles =
-  "inline-flex items-center justify-center gap-1.5 font-medium whitespace-nowrap shrink-0 select-none rounded-btn transition-colors duration-150 disabled:opacity-45 disabled:pointer-events-none active:brightness-95";
+  "inline-flex items-center justify-center gap-1.5 font-medium whitespace-nowrap shrink-0 select-none rounded-btn transition-colors duration-150 disabled:opacity-60 disabled:pointer-events-none active:brightness-95";
 
 const variantStyles: Record<string, string> = {
   filled:
@@ -44,7 +45,9 @@ const variantStyles: Record<string, string> = {
   outlined:
     "bg-transparent text-on-surface border border-outline hover:bg-surface-hover hover:border-primary/50",
   text:
-    "bg-surface-high/85 text-on-surface border border-primary/20 backdrop-blur-sm hover:bg-surface-high hover:border-primary/35",
+    "bg-surface-high text-on-surface-variant border border-outline-variant hover:bg-surface-hover hover:text-on-surface",
+  quiet:
+    "bg-transparent text-on-surface-variant border border-transparent hover:bg-surface-hover hover:text-on-surface",
   danger:
     "bg-danger text-white border border-danger hover:brightness-110",
 };

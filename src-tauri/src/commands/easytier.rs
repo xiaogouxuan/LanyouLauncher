@@ -1,7 +1,7 @@
 use crate::i18n::I18nError;
 use crate::i18n_err;
 use crate::services::easytier::{
-    self, EasytierConfig, EasytierInstallInfo, EasytierStatus,
+    self, EasytierConfig, EasytierDiagnostics, EasytierInstallInfo, EasytierStatus,
 };
 use crate::state::app_state::AppState;
 use std::time::{Duration, Instant};
@@ -88,6 +88,28 @@ pub async fn ping_easytier_server(peer: String) -> Result<u64, I18nError> {
     }
 
     best.ok_or_else(|| i18n_err!("errors.easytier.pingFailed", "连接超时"))
+}
+
+/// 联机环境自检
+#[tauri::command]
+pub async fn get_easytier_diagnostics(
+    state: State<'_, AppState>,
+) -> Result<EasytierDiagnostics, I18nError> {
+    let app_state = state.inner().clone();
+    tokio::task::spawn_blocking(move || easytier::diagnose(&app_state))
+        .await
+        .map_err(|error| i18n_err!("errors.easytier.statusFailed", error))
+}
+
+/// 发现局域网世界（监听游戏广播，识别真实端口）
+#[tauri::command]
+pub async fn discover_lan_worlds(
+    timeout_ms: Option<u64>,
+) -> Result<Vec<crate::services::lan_discovery::LanWorld>, I18nError> {
+    let timeout = std::time::Duration::from_millis(timeout_ms.unwrap_or(2000).clamp(300, 5000));
+    tokio::task::spawn_blocking(move || crate::services::lan_discovery::discover(timeout))
+        .await
+        .map_err(|error| i18n_err!("errors.easytier.statusFailed", error))
 }
 
 /// 停止 EasyTier 联机

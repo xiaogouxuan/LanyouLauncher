@@ -12,6 +12,8 @@ import {
   X,
   ArrowUpRight,
   Check,
+  Github,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -24,12 +26,12 @@ import { useTranslation } from "@/i18n";
 import { useUIStore } from "@/stores/uiStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToast } from "@/components/ui/Toast";
-import { APP_NAME, APP_VERSION, GITEE_REPO, BILIBILI_URL, CONTACT_EMAIL } from "@/utils/constants";
+import { APP_NAME, APP_VERSION, GITEE_REPO, BILIBILI_URL, AUTHOR_NAME, AUTHOR_URL, CONTACT_EMAIL } from "@/utils/constants";
 import { formatMemory } from "@/utils/format";
 import { settingsService, type SystemInfo } from "@/services/settingsService";
 import { updateService, type UpdateRelease } from "@/services/updateService";
-import type { ThemeMode, DownloadSource } from "@/types/settings";
-import { BUILTIN_WALLPAPERS, accessibleAccent } from "@/lib/wallpaperTheme";
+import type { ThemeMode, DownloadSource, UIMaterial } from "@/types/settings";
+import { BUILTIN_WALLPAPERS, builtinWallpaperThemeColor } from "@/lib/wallpaperTheme";
 
 const THEME_COLORS = ["#2F6BFF", "#6D5CE7", "#1A9BC4", "#20A66E", "#D98E20", "#DB5282"];
 
@@ -43,8 +45,8 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-card border border-outline-variant bg-surface-high overflow-hidden shadow-card">
-      <div className="flex items-center gap-2.5 px-4 h-11 border-b border-outline-variant">
+    <section className="ui-panel rounded-card overflow-hidden">
+      <div className="flex items-center gap-2.5 px-4 h-11">
         <span className="w-5 h-5 rounded-[4px] bg-primary/10 text-primary flex items-center justify-center">
           {icon}
         </span>
@@ -92,6 +94,33 @@ export default function Settings() {
     { value: "system", label: t("settings.themeSystem") },
   ];
 
+  const materialOptions = [
+    { value: "solid", label: t("settings.uiMaterialSolid") },
+    { value: "frosted", label: t("settings.uiMaterialFrosted") },
+    { value: "liquid", label: t("settings.uiMaterialLiquid") },
+  ];
+
+  /**
+   * 用了内置壁纸时，调色盘第一项就换成这套壁纸的配套主题色，
+   * 选中壁纸后高亮自然落在第一项上，而不是仍然停留在默认蓝。
+   */
+  const wallpaperThemeColor = settings.background_image
+    ? null
+    : builtinWallpaperThemeColor(settings.wallpaper);
+  const themeColors = wallpaperThemeColor
+    ? [
+        wallpaperThemeColor,
+        ...THEME_COLORS.filter(
+          (color) => color.toLowerCase() !== wallpaperThemeColor.toLowerCase(),
+        ),
+      ]
+    : THEME_COLORS;
+  /** 实际生效的主色：跟随壁纸时用壁纸配套色，调色盘的选中态也以它为准 */
+  const activeThemeColor =
+    settings.theme_color_auto && wallpaperThemeColor
+      ? wallpaperThemeColor
+      : settings.theme_color;
+
   const downloadSourceOptions = [
     { value: "official", label: t("settings.downloadOfficial") },
     { value: "bmclapi", label: t("settings.downloadMirror") },
@@ -107,6 +136,7 @@ export default function Settings() {
   };
 
   const [detectingJava, setDetectingJava] = useState(false);
+  const [activeTab, setActiveTab] = useState("general");
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateRelease, setUpdateRelease] = useState<UpdateRelease | null>(null);
   const [selectingBg, setSelectingBg] = useState(false);
@@ -192,6 +222,8 @@ export default function Settings() {
     try {
       const path = await settingsService.selectBackgroundImage();
       if (path) {
+        updateSetting("theme_color", activeThemeColor);
+        updateSetting("theme_color_auto", false);
         updateSetting("wallpaper", "");
         updateSetting("background_image", path);
         showToast("success", t("settings.backgroundSet"));
@@ -206,7 +238,6 @@ export default function Settings() {
   const handleSelectSolidWallpaper = (color: string) => {
     updateSetting("background_image", "");
     updateSetting("wallpaper", `solid:${color}`);
-    updateSetting("theme_color", accessibleAccent(color));
     showToast("success", t("settings.backgroundSet"));
   };
 
@@ -223,13 +254,43 @@ export default function Settings() {
   const wallpaperActive = "border-primary ring-1 ring-primary";
   const wallpaperIdle = "border-outline-variant hover:border-outline";
 
+  const tabs = [
+    { id: "general", label: t("settings.general") },
+    { id: "appearance", label: t("settings.appearance") },
+    { id: "download", label: t("settings.download") },
+    { id: "java", label: t("settings.java") },
+    { id: "memory", label: t("settings.memory") },
+    { id: "update", label: t("settings.update") },
+    { id: "about", label: t("settings.about") },
+  ];
+
   return (
     <PageTransition>
-      <div className="p-5 max-w-[860px] mx-auto space-y-3.5">
-        <div className="pb-3 border-b border-outline-variant">
-          <h1 className="wallpaper-text text-[18px] font-semibold tracking-tight">{t("settings.title")}</h1>
+      <div className="p-5 max-w-[860px] mx-auto">
+        <h1 className="wallpaper-text text-[18px] font-semibold tracking-tight">
+          {t("settings.title")}
+        </h1>
+
+        <div className="ui-panel mt-3 inline-flex max-w-full items-center gap-0.5 p-1 rounded-[9px] overflow-x-auto">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`h-7 px-3 rounded-[6px] text-[12.5px] font-medium whitespace-nowrap transition-colors ${
+                activeTab === tab.id
+                  ? "bg-primary text-white"
+                  : "text-on-surface-variant hover:bg-surface-hover hover:text-on-surface"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
+        {/* 每个设置分类有自己的入场方式，靠 settings-tab-<id> 区分 */}
+        <div key={activeTab} className={`settings-panel settings-tab-${activeTab} mt-4 space-y-3.5`}>
+        {activeTab === "general" && (
         <Section icon={<Globe size={15} />} title={t("settings.general")}>
           <Row label={t("settings.language")}>
             <Select
@@ -260,37 +321,62 @@ export default function Settings() {
             />
           </Row>
         </Section>
+        )}
 
+        {activeTab === "appearance" && (
         <Section icon={<Palette size={15} />} title={t("settings.appearance")}>
           <Row label={t("settings.themeColor")}>
             <div className="flex items-center gap-1.5">
-              {THEME_COLORS.map((color) => (
+              {themeColors.map((color) => (
                 <button
                   key={color}
                   type="button"
-                  onClick={() => updateSetting("theme_color", color)}
+                  onClick={() => {
+                    updateSetting("theme_color", color);
+                    updateSetting("theme_color_auto", false);
+                  }}
                   className={`w-6 h-6 rounded-full flex items-center justify-center transition-transform hover:scale-105 ${
-                    settings.theme_color.toLowerCase() === color.toLowerCase()
+                    activeThemeColor.toLowerCase() === color.toLowerCase()
                       ? "ring-1 ring-primary"
                       : ""
                   }`}
                   style={{ backgroundColor: color }}
                   aria-label={color}
                 >
-                  {settings.theme_color.toLowerCase() === color.toLowerCase() && (
+                  {activeThemeColor.toLowerCase() === color.toLowerCase() && (
                     <Check size={12} className="text-white" />
                   )}
                 </button>
               ))}
               <input
                 type="color"
-                value={settings.theme_color}
-                onChange={(e) => updateSetting("theme_color", e.target.value)}
+                value={activeThemeColor}
+                onChange={(e) => {
+                  updateSetting("theme_color", e.target.value);
+                  updateSetting("theme_color_auto", false);
+                }}
                 className="w-6 h-6 rounded-full border border-outline-variant bg-transparent cursor-pointer overflow-hidden"
                 title={t("settings.themeColor")}
               />
             </div>
           </Row>
+
+          <Row label={t("settings.uiMaterial")}>
+            <Select
+              className="w-[150px]"
+              options={materialOptions}
+              value={settings.ui_material}
+              onChange={(v) => updateSetting("ui_material", v as UIMaterial)}
+            />
+          </Row>
+          {settings.ui_material === "liquid" && (
+            <div className="flex items-start gap-2 px-4 py-2.5 border-t border-outline-variant">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5 text-warning" />
+              <p className="text-[11px] leading-relaxed text-on-surface-variant">
+                {t("settings.uiMaterialLiquidHint")}
+              </p>
+            </div>
+          )}
 
           <div className="px-4 py-3 border-b border-outline-variant">
             <p className="text-[13px] text-on-surface mb-2.5">{t("settings.wallpaper")}</p>
@@ -298,6 +384,9 @@ export default function Settings() {
               <button
                 type="button"
                 onClick={() => {
+                  // 关掉壁纸时保留当前主色，避免界面突然变回默认蓝
+                  updateSetting("theme_color", activeThemeColor);
+                  updateSetting("theme_color_auto", false);
                   updateSetting("wallpaper", "");
                   updateSetting("background_image", "");
                 }}
@@ -316,8 +405,9 @@ export default function Settings() {
                   onClick={() => {
                     updateSetting("background_image", "");
                     updateSetting("wallpaper", item.id);
-                    // 切壁纸时同步切换配套主题色，让整个界面与壁纸浑然一体
+                    // 内置壁纸自带配套主题色，切换壁纸时整站主色一起换掉
                     updateSetting("theme_color", item.themeColor);
+                    updateSetting("theme_color_auto", true);
                   }}
                   className={`relative h-[52px] w-[84px] rounded-btn border overflow-hidden transition-colors ${
                     settings.wallpaper === item.id ? wallpaperActive : wallpaperIdle
@@ -326,10 +416,6 @@ export default function Settings() {
                   <span
                     className="absolute inset-0 bg-cover bg-center"
                     style={{ backgroundImage: `url(/img/${item.id}.jpg)` }}
-                  />
-                  <span
-                    className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full border border-white/70 shadow-sm"
-                    style={{ backgroundColor: item.themeColor }}
                   />
                   <span className="absolute inset-x-0 bottom-0 px-1.5 py-0.5 text-[10px] text-white bg-black/45 truncate text-left">
                     {t(item.nameKey)}
@@ -346,7 +432,7 @@ export default function Settings() {
                   value={
                     settings.wallpaper.startsWith("solid:")
                       ? settings.wallpaper.slice(6)
-                      : settings.theme_color
+                      : "#2F6BFF"
                   }
                   onChange={(e) => handleSelectSolidWallpaper(e.target.value)}
                   className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
@@ -357,7 +443,7 @@ export default function Settings() {
                   style={{
                     backgroundColor: settings.wallpaper.startsWith("solid:")
                       ? settings.wallpaper.slice(6)
-                      : settings.theme_color,
+                      : "#2F6BFF",
                   }}
                 />
                 <span className="pointer-events-none absolute inset-x-0 bottom-0 px-1.5 py-0.5 text-[10px] text-white bg-black/45 truncate text-left">
@@ -411,7 +497,9 @@ export default function Settings() {
             />
           </div>
         </Section>
+        )}
 
+        {activeTab === "download" && (
         <Section icon={<Download size={15} />} title={t("settings.download")}>
           <Row label={t("settings.downloadSource")}>
             <Select
@@ -422,7 +510,9 @@ export default function Settings() {
             />
           </Row>
         </Section>
+        )}
 
+        {activeTab === "java" && (
         <Section icon={<Coffee size={15} />} title={t("settings.java")}>
           <div className="px-4 py-3 border-b border-outline-variant">
             <div className="flex items-center justify-between gap-4 mb-2">
@@ -475,7 +565,9 @@ export default function Settings() {
             </div>
           </div>
         </Section>
+        )}
 
+        {activeTab === "memory" && (
         <Section icon={<Cpu size={15} />} title={t("settings.memory")}>
           <div className="px-4 py-3 border-b border-outline-variant">
             <div className="flex items-center justify-between text-[12px]">
@@ -513,7 +605,9 @@ export default function Settings() {
             />
           </div>
         </Section>
+        )}
 
+        {activeTab === "update" && (
         <Section icon={<Shield size={15} />} title={t("settings.update")}>
           <Row label={t("settings.autoUpdate")}>
             <Switch
@@ -527,7 +621,9 @@ export default function Settings() {
             </Button>
           </Row>
         </Section>
+        )}
 
+        {activeTab === "about" && (
         <Section icon={<Info size={15} />} title={t("settings.about")}>
           <button
             type="button"
@@ -550,12 +646,29 @@ export default function Settings() {
 
           <button
             type="button"
+            onClick={() => handleOpenUrl(AUTHOR_URL)}
+            className="w-full flex items-center justify-between gap-3 px-4 py-3 border-b border-outline-variant hover:bg-surface-hover/50 transition-colors text-left"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-btn bg-primary/8 border border-primary/25 flex items-center justify-center flex-shrink-0 text-primary">
+                <Github size={17} />
+              </div>
+              <div>
+                <p className="text-[13px] font-medium text-on-surface">{AUTHOR_NAME}</p>
+                <p className="text-[11px] text-on-surface-subtle mt-0.5">{t("settings.authorRole")}</p>
+              </div>
+            </div>
+            <ArrowUpRight size={15} className="text-on-surface-subtle flex-shrink-0" />
+          </button>
+
+          <button
+            type="button"
             onClick={() => handleOpenUrl(BILIBILI_URL)}
             className="w-full flex items-center justify-between gap-3 px-4 py-3 border-b border-outline-variant hover:bg-surface-hover/50 transition-colors text-left"
           >
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-btn bg-primary/8 border border-primary/25 flex items-center justify-center flex-shrink-0">
-                <span className="text-primary font-semibold text-[11px] tracking-tight">1B2T</span>
+              <div className="w-9 h-9 rounded-btn bg-primary/8 border border-primary/25 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                <img src="/team.webp" alt={t("settings.developer")} className="w-9 h-9 object-cover" />
               </div>
               <div>
                 <p className="text-[13px] font-medium text-on-surface">{t("settings.developer")}</p>
@@ -582,6 +695,8 @@ export default function Settings() {
             </p>
           </div>
         </Section>
+        )}
+        </div>
 
         <UpdateDialog
           open={Boolean(updateRelease)}

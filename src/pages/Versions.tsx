@@ -469,14 +469,14 @@ export default function Versions() {
           </div>
         </div>
 
-        <div className="flex gap-2.5 shrink-0">
-          <div className="relative flex-1">
+        <div className="flex items-center gap-2.5 shrink-0">
+          <div className="relative w-[260px] shrink-0">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-subtle" />
             <Input
               placeholder={t("common.search")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8"
+              className="[&>input]:pl-8"
             />
           </div>
           <Select
@@ -486,7 +486,7 @@ export default function Versions() {
             className="w-[150px] shrink-0"
           />
           {activeTab === "available" && (
-            <Button size="sm" variant="tonal" onClick={loadRemote} loading={loading} className="shrink-0">
+            <Button variant="tonal" onClick={loadRemote} loading={loading} className="shrink-0 ml-auto">
               <RefreshCw size={14} />
               {t("version.refresh")}
             </Button>

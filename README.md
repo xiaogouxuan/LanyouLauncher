@@ -23,7 +23,7 @@
 
 LanyouLauncher 是一个基于 [Tauri v2](https://v2.tauri.app/) 的 Minecraft 启动器。前端使用 React 18 + TypeScript 构建，界面遵循 Material Design 3（MD3）设计语言；后端使用 Rust 实现版本下载、账户认证、游戏启动与进程管理等核心能力。
 
-当前版本为 **0.5.4-beta**，处于公开测试阶段，欢迎试用与反馈。
+当前版本为 **1.0.0**，首个正式版，欢迎试用与反馈。
 
 采用便携式数据布局：启动器数据保存在可执行文件所在目录下的 `LanyouLauncher` 文件夹，游戏数据保存在同目录的 `.minecraft` 文件夹，便于迁移与备份。
 
@@ -145,8 +145,8 @@ Gitee 为国内主仓库，GitHub 为备用镜像。前往以下任一处下载�
 - Gitee Releases（推荐）：https://gitee.com/xiaogouxuan/lanyou-launcher/releases
 - GitHub Releases（备用）：https://github.com/xiaogouxuan/LanyouLauncher/releases
 
-- Windows 安装版：`LanyouLauncher_0.5.4_x64-setup.exe`
-- Windows 便携版：`LanyouLauncher_0.5.4-portable.exe`
+- Windows 安装版：`LanyouLauncher_1.0.0_x64-setup.exe`
+- Windows 便携版：`LanyouLauncher_1.0.0-portable.exe`
 
 安装包仅用于安装程序本体。首次启动时，启动器会在自身目录创建 `LanyouLauncher` 与 `.minecraft` 文件夹。
 

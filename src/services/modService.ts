@@ -68,6 +68,11 @@ export const modService = {
     return invoke<ModInfo[]>("get_installed_mods", { targetVersion });
   },
 
+  /** 用文件哈希识别本地 Mod，补齐图标、简介、项目 ID 等信息 */
+  async identifyInstalledMods(targetVersion?: string): Promise<ModInfo[]> {
+    return invoke<ModInfo[]>("identify_installed_mods", { targetVersion });
+  },
+
   async toggleMod(modId: string, enabled: boolean, targetVersion?: string): Promise<void> {
     return invoke("toggle_mod", { modId, enabled, targetVersion });
   },

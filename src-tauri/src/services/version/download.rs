@@ -71,6 +71,8 @@ struct AssetIndexInfo {
 #[derive(Debug, Deserialize)]
 struct Library {
     name: String,
+    /// 旧版 Forge 等只给 maven 根地址，不给 downloads，需要自行拼接
+    url: Option<String>,
     downloads: Option<LibraryDownloads>,
     rules: Option<Vec<Rule>>,
     natives: Option<std::collections::HashMap<String, String>>,
@@ -358,10 +360,25 @@ pub async fn verify_and_repair_version(
         download_file(&state.http_client, &version_json_urls, &version_json_path).await?;
     }
 
-    let version_content = std::fs::read_to_string(&version_json_path)
-        .map_err(|e| i18n_err!("errors.version.readVersionJsonFailed", e))?;
-    let version: VersionJson = serde_json::from_str(&version_content)
+    // 兼容 HMCL/PCL 与加载器生成的 inheritsFrom 增量版本：先合并父版本再校验文件
+    let merged_json =
+        crate::services::version::resolve::load_merged_version_json(minecraft_dir, version_id)?;
+    let version: VersionJson = serde_json::from_value(merged_json)
         .map_err(|e| i18n_err!("errors.version.parseVersionJsonFailed", e))?;
+
+    // 加载器版本目录通常没有独立 jar：直接复用原版目录的 client.jar，避免重复下载
+    let client_jar = version_dir.join(format!("{}.jar", version.id));
+    if !client_jar.exists() && version.downloads.client.size > 0 {
+        if let Ok(chain) = crate::services::version::resolve::load_version_chain(minecraft_dir, version_id)
+        {
+            if let Some(base_id) = chain.last().filter(|base| *base != version_id) {
+                let base_jar = versions_dir.join(base_id).join(format!("{}.jar", base_id));
+                if base_jar.is_file() {
+                    let _ = std::fs::copy(&base_jar, &client_jar);
+                }
+            }
+        }
+    }
 
     // 2. asset index 缺失或大小不对时补全，后续才能核对资源对象
     let assets_indexes_dir = minecraft_dir.join("assets").join("indexes");
@@ -506,6 +523,22 @@ fn scan_missing_files(
                     urls: crate::utils::url::resolve_download_urls(&artifact.url, download_source),
                     dest,
                     size: artifact.size,
+                });
+            }
+        } else if let Some(base_url) = lib.url.as_deref().filter(|url| !url.trim().is_empty()) {
+            // 旧版 Forge 只提供 maven 根地址（如 https://maven.minecraftforge.net/）
+            let lib_path = derive_library_path(&lib.name);
+            let dest = libraries_dir.join(&lib_path);
+            if needs_download(&dest, 0) {
+                let mut url = base_url.to_string();
+                if !url.ends_with('/') {
+                    url.push('/');
+                }
+                url.push_str(&lib_path);
+                missing.libraries.push(PlannedFile {
+                    urls: vec![url],
+                    dest,
+                    size: 0,
                 });
             }
         }
@@ -1051,15 +1084,17 @@ fn should_download_library(lib: &Library) -> bool {
 /// 将 Maven 坐标推导为 libraries 目录下的相对路径
 fn derive_library_path(name: &str) -> String {
     // com.mojang:logging:1.1.1 → com/mojang/logging/1.1.1/logging-1.1.1.jar
+    // group:artifact:version:classifier → .../artifact-version-classifier.jar
     let parts: Vec<&str> = name.split(':').collect();
     if parts.len() >= 3 {
         let group = parts[0].replace('.', "/");
         let artifact = parts[1];
         let version = parts[2];
-        format!(
-            "{}/{}/{}/{}-{}.jar",
-            group, artifact, version, artifact, version
-        )
+        let file = match parts.get(3) {
+            Some(classifier) => format!("{}-{}-{}.jar", artifact, version, classifier),
+            None => format!("{}-{}.jar", artifact, version),
+        };
+        format!("{}/{}/{}/{}", group, artifact, version, file)
     } else {
         format!("{}.jar", name.replace(':', "/"))
     }
