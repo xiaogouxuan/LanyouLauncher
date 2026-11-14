@@ -17,7 +17,7 @@ const defaultSettings: Settings = {
   default_memory: 4096,
   default_game_dir: "",
   auto_update: true,
-  wallpaper: "",
+  wallpaper: "img4",
   background_image: "",
   background_opacity: 1,
   background_blur: 0,

@@ -71,7 +71,7 @@ impl Default for Settings {
             default_memory: 4096,
             default_game_dir: String::new(),
             auto_update: true,
-            wallpaper: "img1".to_string(),
+            wallpaper: "img4".to_string(),
             background_image: String::new(),
             background_opacity: 1.0,
             background_blur: 0.0,
