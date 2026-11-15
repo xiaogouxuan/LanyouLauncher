@@ -1,5 +1,5 @@
 export const APP_NAME = "LanyouLauncher";
-export const APP_VERSION = "1.0.0";
+export const APP_VERSION = __APP_VERSION__;
 export const GITEE_REPO = "https://gitee.com/xiaogouxuan/lanyou-launcher";
 export const GITHUB_REPO = "https://github.com/xiaogouxuan/LanyouLauncher";
 export const AUTHOR_NAME = "Minecraft小狗轩";
