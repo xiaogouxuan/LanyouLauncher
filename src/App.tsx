@@ -15,6 +15,7 @@ import { accountService } from "@/services/accountService";
 import { versionService } from "@/services/versionService";
 import { settingsService } from "@/services/settingsService";
 import { taskService } from "@/services/taskService";
+import { launchService } from "@/services/launchService";
 import { BRAND_THEME_COLOR, builtinWallpaperThemeColor, builtinWallpaperTone, type TextTone } from "@/lib/wallpaperTheme";
 
 function DataInitializer({ children }: { children: React.ReactNode }) {
@@ -54,6 +55,8 @@ function DataInitializer({ children }: { children: React.ReactNode }) {
 
     // 启动全局任务监听器
     taskService.startListening().catch(() => {});
+    // 全局监听游戏进程事件：即使当前不在首页，也能收到崩溃信息并弹窗
+    launchService.ensureListeners().catch(() => {});
   }, [
     setAccounts,
     setActiveAccount,

@@ -48,3 +48,27 @@ pub struct LaunchInstance {
     pub pid: u32,
     pub version_id: String,
 }
+
+/// 游戏崩溃信息
+///
+/// 游戏进程异常退出时由后端读取 crash-reports / latest.log 汇总，
+/// 前端弹窗直接展示，避免用户只能自己去翻日志。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrashInfo {
+    /// 进程 ID
+    pub pid: u32,
+    /// 版本 ID
+    pub version_id: String,
+    /// 游戏目录，弹窗里可以一键打开
+    pub game_dir: String,
+    /// 退出代码（被系统强杀时可能为空）
+    pub exit_code: Option<i32>,
+    /// 一句话原因，可能是空字符串
+    pub summary: String,
+    /// 崩溃报告或日志摘要
+    pub details: String,
+    /// 崩溃报告文件路径（存在时）
+    pub report_path: Option<String>,
+    /// latest.log 末尾若干行
+    pub log_tail: Vec<String>,
+}

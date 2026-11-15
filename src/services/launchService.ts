@@ -4,13 +4,14 @@ import { useLaunchStore } from "@/stores/launchStore";
 import { useTaskStore, createTaskId } from "@/stores/taskStore";
 import { t } from "@/i18n";
 import { formatError } from "@/utils/format";
-import type { LaunchConfig, LogEntry, LaunchProgress, LaunchInstance } from "@/types/launch";
+import type { LaunchConfig, LogEntry, LaunchProgress, LaunchInstance, CrashInfo } from "@/types/launch";
 
 let unlistenLog: UnlistenFn | null = null;
 let unlistenFailed: UnlistenFn | null = null;
 let unlistenProgress: UnlistenFn | null = null;
 let unlistenInstanceRunning: UnlistenFn | null = null;
 let unlistenInstanceExited: UnlistenFn | null = null;
+let unlistenInstanceCrashed: UnlistenFn | null = null;
 
 /**
  * 等待后端确认游戏真的起来了（进程存活检测通过），
@@ -162,6 +163,20 @@ export const launchService = {
         useLaunchStore.getState().removeRunningInstance(pid);
       });
     }
+    if (!unlistenInstanceCrashed) {
+      unlistenInstanceCrashed = await listen<CrashInfo>("launch-instance-crashed", (event) => {
+        const crash = event.payload;
+        // 弹窗里展示完整原因，同时把这句话写进下方日志，方便用户复制
+        if (crash.summary) {
+          useLaunchStore.getState().appendLog({
+            level: "error",
+            message: crash.summary,
+            timestamp: Date.now(),
+          });
+        }
+        useLaunchStore.getState().setCrash(crash);
+      });
+    }
   },
 
   unsubscribeLogs() {
@@ -184,6 +199,10 @@ export const launchService = {
     if (unlistenInstanceExited) {
       unlistenInstanceExited();
       unlistenInstanceExited = null;
+    }
+    if (unlistenInstanceCrashed) {
+      unlistenInstanceCrashed();
+      unlistenInstanceCrashed = null;
     }
   },
 };

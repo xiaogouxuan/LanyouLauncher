@@ -5,6 +5,7 @@ import { BottomNav } from "./BottomNav";
 import { ContentArea } from "./ContentArea";
 import { CommandPalette } from "./CommandPalette";
 import { TaskPanel } from "@/components/task/TaskPanel";
+import { CrashDialog } from "@/components/game/CrashDialog";
 
 export function AppLayout() {
   const [taskPanelOpen, setTaskPanelOpen] = useState(false);
@@ -50,6 +51,9 @@ export function AppLayout() {
       <BottomNav />
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+
+      {/* 游戏崩溃弹窗：挂在布局层，任何页面都能第一时间看到原因 */}
+      <CrashDialog />
     </div>
   );
 }

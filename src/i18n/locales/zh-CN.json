@@ -102,6 +102,8 @@
     "enterGame": "一键进入游戏",
     "enteringGame": "正在启动游戏",
     "enterGameStarted": "游戏已启动，正在连接房间",
+    "lanJoinStarted": "游戏已启动，请在「多人游戏 → 局域网游戏」里双击房主的房间进入",
+    "lanJoinHint": "离线账号必须走「多人游戏 → 扫描到的局域网游戏」双击房主的房间进入。不要用 IP 直连：局域网世界直连会触发正版验证，离线账号会提示「会话无效」。",
     "launchGame": "启动游戏",
     "launchingGame": "正在启动",
     "launchGameStarted": "游戏已启动，请在游戏里「对局域网开放」",
@@ -868,6 +870,24 @@
     "generic": {
       "title": "游戏启动失败",
       "advice": "游戏进程异常退出。请查看下方日志，或尝试重新启动；如果安装了 Mod，请检查兼容性。"
+    },
+    "dialogTitle": "游戏崩溃了",
+    "unknownReason": "没有拿到明确的崩溃原因，可以展开详情查看日志。",
+    "exitCodeShort": "退出代码 {{code}}",
+    "reportPath": "崩溃报告：{{path}}",
+    "showDetails": "展开崩溃详情",
+    "hideDetails": "收起详情",
+    "detailsTitle": "崩溃详情",
+    "logTitle": "游戏日志",
+    "copyDetails": "复制崩溃信息",
+    "copied": "已复制",
+    "openGameDir": "打开游戏目录",
+    "footerHint": "把复制的崩溃信息发到反馈群，能更快定位问题。",
+    "export": {
+      "version": "版本：{{version}}",
+      "exitCode": "退出代码：{{code}}",
+      "reason": "原因：{{reason}}",
+      "reportPath": "崩溃报告：{{path}}"
     }
   },
   "errors": {

@@ -11,7 +11,6 @@ import {
   Copy,
   Check,
   SlidersHorizontal,
-  AlertTriangle,
   Zap,
   BookOpen,
   ArrowRight,
@@ -45,7 +44,6 @@ import { modService } from "@/services/modService";
 import type { ModInfo, ModSource } from "@/types/mod";
 import { settingsService, type SystemInfo } from "@/services/settingsService";
 import { formatMemory, formatError } from "@/utils/format";
-import { analyzeCrash, type CrashCategory } from "@/utils/crashAnalyzer";
 import type { LaunchConfig } from "@/types/launch";
 import type { ModpackFormat, ModpackImportProgress } from "@/types/version";
 
@@ -161,7 +159,6 @@ export default function Home() {
   const [selectedJava, setSelectedJava] = useState<string>("");
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [options, setOptions] = useState<LaunchOptions>(readLaunchOptions);
-  const [crashCategory, setCrashCategory] = useState<CrashCategory | null>(null);
   const [recommendedMods, setRecommendedMods] = useState<RecommendedMod[]>([]);
 
   // 整合包拖拽导入
@@ -351,18 +348,6 @@ export default function Home() {
     }
   }, [logs]);
 
-  /**
-   * 启动结束后从最后一条错误日志推断崩溃原因。
-   * 只在非启动阶段执行，避免把加载过程中的普通错误误判为崩溃。
-   */
-  useEffect(() => {
-    if (isLaunching) return;
-    const lastError = [...logs].reverse().find((log) => log.level === "error");
-    if (!lastError) return;
-    const category = analyzeCrash(lastError.message);
-    if (category) setCrashCategory(category);
-  }, [logs, isLaunching]);
-
   const handleCopyLogs = async () => {
     if (logs.length === 0) return;
     const text = logs
@@ -441,7 +426,6 @@ export default function Home() {
     setIsLaunching(true);
     resetLaunchProgress();
     clearLogs();
-    setCrashCategory(null);
     setShowLogs(false);
 
     try {
@@ -456,7 +440,6 @@ export default function Home() {
         message: String(error),
         timestamp: Date.now(),
       });
-      setCrashCategory(analyzeCrash(String(error)));
       showToast("error", String(error));
     } finally {
       setIsLaunching(false);
@@ -692,28 +675,6 @@ export default function Home() {
             <FileArchive size={11} className="shrink-0" />
             <span className="truncate">{t("modpack.dragHint")}</span>
           </p>
-
-          {crashCategory && (
-            <section className="mt-4 rounded-[8px] border border-danger-border bg-danger-container px-3 py-2.5 flex items-start gap-2.5">
-              <AlertTriangle size={15} className="shrink-0 mt-0.5 text-danger" />
-              <div className="flex-1 min-w-0">
-                <p className="text-[12px] font-semibold text-danger">
-                  {t(`crash.${crashCategory}.title`)}
-                </p>
-                <p className="mt-0.5 text-[11px] leading-relaxed text-on-surface-variant">
-                  {t(`crash.${crashCategory}.advice`)}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCrashCategory(null)}
-                className="shrink-0 w-5 h-5 flex items-center justify-center rounded-[4px] text-on-surface-subtle hover:bg-surface-hover hover:text-on-surface transition-colors"
-                title={String(t("common.close"))}
-              >
-                <X size={13} />
-              </button>
-            </section>
-          )}
 
           {(isLaunching || isRunning || logs.length > 0) && (
             <section className="ui-panel mt-4 rounded-[10px] overflow-hidden">

@@ -1,12 +1,13 @@
 use crate::i18n::I18nError;
 use crate::i18n_err;
-use crate::models::launch::LaunchConfig;
+use crate::models::launch::{CrashInfo, LaunchConfig};
 use crate::models::settings::{DownloadSource, Settings};
 use crate::state::app_state::AppState;
 use log::info;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::io::{BufRead, BufReader};
+use std::time::{Duration, SystemTime};
 use tauri::Emitter;
 
 #[cfg(target_os = "windows")]
@@ -179,6 +180,8 @@ pub async fn spawn_minecraft(
 
     let child_id = child.id();
     let version_id_for_monitor = config.version_id.clone();
+    let game_dir_for_monitor = game_dir.clone();
+    let started_at_wall = SystemTime::now();
 
     // 捕获 stdout 日志
     let stdout = child.stdout.take().ok_or(i18n_err!("errors.launch.stdoutUnavailable"))?;
@@ -187,6 +190,13 @@ pub async fn spawn_minecraft(
     let app_handle_stderr = app_handle.clone();
     let app_handle_monitor = app_handle.clone();
     let state_for_monitor = state.clone();
+
+    // 保留 stderr 的最后若干行：JVM 在日志文件初始化前就崩溃时，
+    // 这是唯一能说明原因的输出。
+    let stderr_buffer: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
+    let stderr_for_reader = stderr_buffer.clone();
+    let stderr_for_monitor = stderr_buffer.clone();
 
     // 异步读取 stdout
     tokio::spawn(async move {
@@ -207,6 +217,12 @@ pub async fn spawn_minecraft(
         let reader = BufReader::new(stderr);
         for line in reader.lines() {
             if let Ok(line) = line {
+                if let Ok(mut buffer) = stderr_for_reader.lock() {
+                    if buffer.len() >= 200 {
+                        buffer.pop_front();
+                    }
+                    buffer.push_back(line.clone());
+                }
                 let level = if line.contains("ERROR") || line.contains("FATAL") {
                     "error"
                 } else if line.contains("WARN") {
@@ -254,15 +270,42 @@ pub async fn spawn_minecraft(
                     break;
                 }
                 Some(Some(exit_status)) => {
-                    // 进程已退出
+                    // 进程已退出：先判断是正常关游戏还是崩溃退出。
+                    // 崩溃时要把 crash-reports / latest.log 里的原因带回前端弹窗，
+                    // 否则用户只能看到窗口瞬间消失。
+                    let stderr_tail: Vec<String> = stderr_for_monitor
+                        .lock()
+                        .map(|buffer| buffer.iter().cloned().collect())
+                        .unwrap_or_default();
+                    let crash = collect_crash_info(
+                        &game_dir_for_monitor,
+                        started_at_wall,
+                        child_id,
+                        version_id_for_monitor.clone(),
+                        exit_status.code(),
+                        &stderr_tail,
+                    );
+
                     if running_emitted {
-                        let _ = app_handle_monitor.emit(
-                            "launch-instance-exited",
-                            crate::models::launch::LaunchInstance {
-                                pid: child_id,
-                                version_id: version_id_for_monitor.clone(),
-                            },
-                        );
+                        match crash {
+                            Some(info) => {
+                                info!(
+                                    "Minecraft 崩溃退出 (pid={}): {}",
+                                    child_id, info.summary
+                                );
+                                let _ = app_handle_monitor
+                                    .emit("launch-instance-crashed", info);
+                            }
+                            None => {
+                                let _ = app_handle_monitor.emit(
+                                    "launch-instance-exited",
+                                    crate::models::launch::LaunchInstance {
+                                        pid: child_id,
+                                        version_id: version_id_for_monitor.clone(),
+                                    },
+                                );
+                            }
+                        }
                     } else {
                         let _ = app_handle_monitor.emit(
                             "launch-failed",
@@ -272,6 +315,11 @@ pub async fn spawn_minecraft(
                                 timestamp: chrono::Utc::now().timestamp_millis(),
                             },
                         );
+                        // 启动阶段就崩溃时，同样把真实原因推给前端
+                        if let Some(info) = crash {
+                            let _ = app_handle_monitor
+                                .emit("launch-instance-crashed", info);
+                        }
                     }
                     {
                         let mut proc = state_for_monitor.active_process.lock().await;
@@ -368,6 +416,202 @@ pub async fn kill_minecraft(
             Ok(())
         }
     }
+}
+
+/// 汇总崩溃原因：优先读本次启动后生成的 crash-report / JVM 错误日志，
+/// 其次读 latest.log 末尾。返回 None 表示看起来是正常关闭。
+fn collect_crash_info(
+    game_dir: &Path,
+    started_at: SystemTime,
+    pid: u32,
+    version_id: String,
+    exit_code: Option<i32>,
+    stderr_tail: &[String],
+) -> Option<CrashInfo> {
+    let mut log_tail = read_log_tail(game_dir, 80);
+    // 日志文件还没生成（JVM 早期崩溃）时，退回用 stderr 的输出
+    if log_tail.is_empty() {
+        log_tail = stderr_tail.to_vec();
+    }
+
+    if let Some((path, content)) = find_crash_report(game_dir, started_at)
+        .or_else(|| find_jvm_error_log(game_dir, pid, started_at))
+    {
+        return Some(CrashInfo {
+            pid,
+            version_id,
+            game_dir: game_dir.to_string_lossy().into_owned(),
+            exit_code,
+            summary: extract_crash_summary(&content),
+            details: first_lines(&content, 120, 16_000),
+            report_path: Some(path.to_string_lossy().into_owned()),
+            log_tail,
+        });
+    }
+
+    // 退出代码为 0 且没有新的崩溃报告：按用户正常关闭游戏处理
+    if exit_code == Some(0) {
+        return None;
+    }
+
+    let summary = {
+        let from_log = summary_from_log(&log_tail);
+        if from_log.is_empty() {
+            summary_from_log(stderr_tail)
+        } else {
+            from_log
+        }
+    };
+
+    Some(CrashInfo {
+        pid,
+        version_id,
+        game_dir: game_dir.to_string_lossy().into_owned(),
+        exit_code,
+        summary,
+        details: String::new(),
+        report_path: None,
+        log_tail,
+    })
+}
+
+/// 找本次启动之后最新的 crash-report（crash-reports/crash-*.txt）
+fn find_crash_report(game_dir: &Path, started_at: SystemTime) -> Option<(PathBuf, String)> {
+    let dir = game_dir.join("crash-reports");
+    let entries = std::fs::read_dir(&dir).ok()?;
+    let since = started_at
+        .checked_sub(Duration::from_secs(10))
+        .unwrap_or(started_at);
+
+    let mut newest: Option<(PathBuf, SystemTime)> = None;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !name.starts_with("crash-") || !name.ends_with(".txt") {
+            continue;
+        }
+        let Ok(modified) = entry.metadata().and_then(|m| m.modified()) else {
+            continue;
+        };
+        if modified < since {
+            continue;
+        }
+        if newest.as_ref().map(|(_, time)| modified > *time).unwrap_or(true) {
+            newest = Some((path, modified));
+        }
+    }
+
+    let (path, _) = newest?;
+    let content = std::fs::read_to_string(&path).ok()?;
+    Some((path, content))
+}
+
+/// JVM 直接崩溃时会在工作目录留下 hs_err_pid<pid>.log
+fn find_jvm_error_log(game_dir: &Path, pid: u32, started_at: SystemTime) -> Option<(PathBuf, String)> {
+    let path = game_dir.join(format!("hs_err_pid{}.log", pid));
+    let modified = std::fs::metadata(&path).ok()?.modified().ok()?;
+    let since = started_at
+        .checked_sub(Duration::from_secs(10))
+        .unwrap_or(started_at);
+    if modified < since {
+        return None;
+    }
+    let content = std::fs::read_to_string(&path).ok()?;
+    Some((path, content))
+}
+
+/// 从崩溃报告里提取一句话原因
+fn extract_crash_summary(content: &str) -> String {
+    let mut lines = content.lines();
+    while let Some(line) = lines.next() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("Description:") {
+            let rest = rest.trim();
+            if !rest.is_empty() {
+                return truncate_text(rest, 300);
+            }
+            if let Some(next) = lines.next() {
+                let next = next.trim();
+                if !next.is_empty() {
+                    return truncate_text(next, 300);
+                }
+            }
+        }
+    }
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.contains("EXCEPTION_")
+            || trimmed.contains("SIGSEGV")
+            || trimmed.contains("Internal Error")
+            || trimmed.contains("Exception")
+            || trimmed.contains("Error")
+        {
+            return truncate_text(trimmed, 300);
+        }
+    }
+    String::new()
+}
+
+/// 从 latest.log 末尾找最后一条像异常的行
+fn summary_from_log(log_tail: &[String]) -> String {
+    for line in log_tail.iter().rev() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("at ") || trimmed.starts_with("\tat ") {
+            continue;
+        }
+        let lower = trimmed.to_lowercase();
+        if lower.contains("exception")
+            || lower.contains("error")
+            || lower.contains("caused by")
+            || lower.contains("fatal")
+        {
+            return truncate_text(trimmed, 300);
+        }
+    }
+    String::new()
+}
+
+/// 读取 logs/latest.log 的最后若干行（只读文件尾部，避免大日志卡顿）
+fn read_log_tail(game_dir: &Path, max_lines: usize) -> Vec<String> {
+    let path = game_dir.join("logs").join("latest.log");
+    let Ok(bytes) = std::fs::read(&path) else {
+        return Vec::new();
+    };
+    const MAX_BYTES: usize = 256 * 1024;
+    let slice = if bytes.len() > MAX_BYTES {
+        &bytes[bytes.len() - MAX_BYTES..]
+    } else {
+        &bytes[..]
+    };
+    let text = String::from_utf8_lossy(slice);
+    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+    if lines.len() > max_lines {
+        lines = lines.split_off(lines.len() - max_lines);
+    }
+    lines
+}
+
+fn first_lines(content: &str, max_lines: usize, max_chars: usize) -> String {
+    let mut result = String::new();
+    for line in content.lines().take(max_lines) {
+        if result.len() + line.len() + 1 > max_chars {
+            break;
+        }
+        result.push_str(line);
+        result.push('\n');
+    }
+    result
+}
+
+fn truncate_text(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    text.chars().take(max_chars).collect::<String>() + "…"
 }
 
 /// 读取设置获取下载源

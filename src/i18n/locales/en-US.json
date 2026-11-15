@@ -102,6 +102,8 @@
     "enterGame": "Enter game with one click",
     "enteringGame": "Launching game",
     "enterGameStarted": "Game launched, connecting to the room",
+    "lanJoinStarted": "Game launched. Double-click the host's world under Multiplayer → LAN games.",
+    "lanJoinHint": "With an offline account, join by double-clicking the host's world under Multiplayer → LAN games. Do not use Direct Connect: connecting to a LAN world by IP triggers online-mode checks and offline accounts get \"Invalid session\".",
     "launchGame": "Launch game",
     "launchingGame": "Launching",
     "launchGameStarted": "Game launched. Open it to LAN in the game.",
@@ -867,6 +869,24 @@
     "generic": {
       "title": "Game Launch Failed",
       "advice": "The game process exited unexpectedly. Check the log below or try launching again; if mods are installed, verify their compatibility."
+    },
+    "dialogTitle": "Game crashed",
+    "unknownReason": "No clear reason was captured. Expand the details to check the log.",
+    "exitCodeShort": "Exit code {{code}}",
+    "reportPath": "Crash report: {{path}}",
+    "showDetails": "Show crash details",
+    "hideDetails": "Hide details",
+    "detailsTitle": "Crash details",
+    "logTitle": "Game log",
+    "copyDetails": "Copy crash info",
+    "copied": "Copied",
+    "openGameDir": "Open game folder",
+    "footerHint": "Send the copied crash info to the feedback group so it can be diagnosed faster.",
+    "export": {
+      "version": "Version: {{version}}",
+      "exitCode": "Exit code: {{code}}",
+      "reason": "Reason: {{reason}}",
+      "reportPath": "Crash report: {{path}}"
     }
   },
   "errors": {

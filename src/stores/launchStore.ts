@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { LaunchConfig, LogEntry, LaunchProgress, LaunchInstance } from "@/types/launch";
+import type { CrashInfo, LaunchConfig, LogEntry, LaunchProgress, LaunchInstance } from "@/types/launch";
 
 const defaultLaunchConfig: LaunchConfig = {
   version_id: "",
@@ -26,6 +26,8 @@ interface LaunchState {
   launchConfig: LaunchConfig;
   launchProgress: LaunchProgress;
   runningInstances: LaunchInstance[];
+  /** 最近一次游戏崩溃信息，非空时全局弹窗展示 */
+  crash: CrashInfo | null;
   setIsLaunching: (v: boolean) => void;
   setIsRunning: (v: boolean) => void;
   setLaunchConfig: (config: Partial<LaunchConfig>) => void;
@@ -38,6 +40,8 @@ interface LaunchState {
   addRunningInstance: (instance: LaunchInstance) => void;
   removeRunningInstance: (pid: number) => void;
   clearRunningInstances: () => void;
+  setCrash: (crash: CrashInfo) => void;
+  clearCrash: () => void;
 }
 
 export const useLaunchStore = create<LaunchState>()((set) => ({
@@ -47,6 +51,7 @@ export const useLaunchStore = create<LaunchState>()((set) => ({
   launchConfig: { ...defaultLaunchConfig },
   launchProgress: { ...defaultLaunchProgress },
   runningInstances: [],
+  crash: null,
   setIsLaunching: (v) => set({ isLaunching: v }),
   setIsRunning: (v) => set({ isRunning: v }),
   setLaunchConfig: (config) =>
@@ -89,4 +94,12 @@ export const useLaunchStore = create<LaunchState>()((set) => ({
       runningInstances: [],
       isRunning: false,
     }),
+  setCrash: (crash) =>
+    set((s) => ({
+      crash,
+      // 崩溃的实例已经退出，顺手清掉，避免首页还显示“停止游戏”
+      runningInstances: s.runningInstances.filter((i) => i.pid !== crash.pid),
+      isRunning: s.runningInstances.some((i) => i.pid !== crash.pid),
+    })),
+  clearCrash: () => set({ crash: null }),
 }));

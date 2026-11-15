@@ -611,9 +611,13 @@ export function Multiplayer() {
   };
 
   /**
-   * 一键启动游戏：客人带服务器地址直连，房主不带地址（进游戏后开放局域网）
+   * 一键启动游戏。
+   *
+   * 注意：客人不再用 IP 直连。直连局域网世界会走正版验证，
+   * 离线账号必然被踢回“会话无效”；只有在游戏内的局域网列表里
+   * 双击房主房间进入才不会触发验证。
    */
-  const autoLaunchGame = async (serverAddress: string | null) => {
+  const autoLaunchGame = async (serverAddress: string | null, startedKey?: string) => {
     if (!activeAccount) {
       showToast("error", t("multiplayer.enterNeedAccount"));
       navigate("/accounts");
@@ -644,7 +648,7 @@ export function Multiplayer() {
       await launchService.startGame(config);
       showToast(
         "success",
-        t(serverAddress ? "multiplayer.enterGameStarted" : "multiplayer.launchGameStarted")
+        t(startedKey ?? (serverAddress ? "multiplayer.enterGameStarted" : "multiplayer.launchGameStarted"))
       );
     } catch (error) {
       showToast("error", formatError(error));
@@ -654,14 +658,14 @@ export function Multiplayer() {
   };
 
   /**
-   * 客人一键进入房主的游戏
+   * 客人一键进入房主的游戏：启动游戏后走局域网列表，避免正版验证
    */
   const handleEnterGame = async () => {
     if (!roomAddress) {
       showToast("error", t("multiplayer.enterNeedAddress"));
       return;
     }
-    await autoLaunchGame(roomAddress);
+    await autoLaunchGame(null, "multiplayer.lanJoinStarted");
   };
 
   /**
@@ -949,6 +953,14 @@ export function Multiplayer() {
                   </Button>
                 )}
               </div>
+
+              {role === "guest" && (
+                <div className="px-4 py-2 border-t border-outline-variant bg-surface-container/40">
+                  <p className="text-[10.5px] leading-relaxed text-on-surface-subtle">
+                    {t("multiplayer.lanJoinHint")}
+                  </p>
+                </div>
+              )}
 
               {role === "host" && (
                 <div className="flex items-center gap-2 px-4 py-2.5 border-t border-outline-variant">
