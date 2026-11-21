@@ -120,6 +120,8 @@ pub fn run() {
             commands::easytier::ping_easytier_server,
             commands::easytier::get_easytier_diagnostics,
             commands::easytier::discover_lan_worlds,
+            commands::lan_bridge::start_lan_bridge,
+            commands::lan_bridge::stop_lan_bridge,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -128,6 +130,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 let state = app_handle.state::<AppState>();
                 crate::services::easytier::shutdown(&state);
+                crate::services::lan_bridge::stop();
             }
         });
 }

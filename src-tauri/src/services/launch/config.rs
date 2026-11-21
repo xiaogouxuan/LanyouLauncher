@@ -138,11 +138,14 @@ pub fn build_launch_args(
     } else {
         account.access_token.clone().unwrap_or_default()
     };
-    // 外置登录使用 mojang 类型，微软与离线账号使用 msa
-    let user_type = if account.account_type == AccountType::ThirdParty {
-        "mojang"
-    } else {
-        "msa"
+    // 外置登录用 mojang，微软账号用 msa，
+    // 离线账号必须用 legacy：游戏会按账号类型判断是否已正版登录，
+    // 冒充 msa 会让「对局域网开放」的世界开启正版验证，
+    // 导致其他离线账号加入时报「无效会话」。
+    let user_type = match account.account_type {
+        AccountType::ThirdParty => "mojang",
+        AccountType::Offline => "legacy",
+        AccountType::Microsoft => "msa",
     };
     // 客户端 jar 路径，部分旧版 Forge/OptiFine 需要 ${primary_jar}
     let primary_jar = versions_dir

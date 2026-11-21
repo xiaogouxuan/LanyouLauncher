@@ -118,6 +118,8 @@ pub async fn stop_easytier(
     state: State<'_, AppState>,
 ) -> Result<EasytierStatus, I18nError> {
     let app_state = state.inner().clone();
+    // 断开联机后房间已经不可达，局域网广播也要一起撤掉
+    crate::services::lan_bridge::stop();
     tokio::task::spawn_blocking(move || easytier::stop(&app_state))
         .await
         .map_err(|error| i18n_err!("errors.easytier.stopFailed", error))?

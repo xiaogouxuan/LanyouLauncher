@@ -1,5 +1,6 @@
 pub mod account;
 pub mod easytier;
+pub mod lan_bridge;
 pub mod launch;
 pub mod mod_manager;
 pub mod modpack;

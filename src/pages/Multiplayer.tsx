@@ -26,6 +26,7 @@ import { PageTransition } from "@/components/common/PageTransition";
 import { MultiplayerTutorial } from "@/components/multiplayer/MultiplayerTutorial";
 import { useTranslation } from "@/i18n";
 import { easytierService } from "@/services/easytierService";
+import { lanBridgeService } from "@/services/lanBridgeService";
 import { launchService } from "@/services/launchService";
 import { useAccountStore } from "@/stores/accountStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -658,13 +659,27 @@ export function Multiplayer() {
   };
 
   /**
-   * 客人一键进入房主的游戏：启动游戏后走局域网列表，避免正版验证
+   * 客人一键进入房主的游戏。
+   *
+   * 直连 IP 会触发正版验证，离线账号必然「会话无效」；
+   * 而游戏的局域网列表依赖组播，组播传不过联机的虚拟网络。
+   * 所以先在客人本机开一个转发 + 局域网广播，
+   * 让房主的房间直接出现在「多人游戏 → 局域网游戏」里。
    */
   const handleEnterGame = async () => {
     if (!roomAddress) {
       showToast("error", t("multiplayer.enterNeedAddress"));
       return;
     }
+
+    const [host, port] = roomAddress.split(":");
+    try {
+      await lanBridgeService.start(host, Number(port), form.name || "Lanyou Room");
+    } catch (error) {
+      showToast("error", formatError(error));
+      return;
+    }
+
     await autoLaunchGame(null, "multiplayer.lanJoinStarted");
   };
 

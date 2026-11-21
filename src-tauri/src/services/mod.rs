@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod easytier;
 pub mod java;
+pub mod lan_bridge;
 pub mod lan_discovery;
 pub mod launch;
 pub mod mod_platform;
